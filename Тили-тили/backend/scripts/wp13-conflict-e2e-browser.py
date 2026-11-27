@@ -3,6 +3,7 @@ import os
 import re
 from pathlib import Path
 from urllib.parse import urlparse
+from uuid import uuid4
 
 from playwright.sync_api import expect, sync_playwright
 
@@ -75,6 +76,97 @@ def verify_price_history(page):
     row = page.get_by_role('link', name=name, exact=True).locator('..')
     expect(row).to_contain_text(re.compile(r'920\s*₽'))
     expect(row).not_to_contain_text('840')
+
+
+def verify_possible_purchase_duplicate(browser, errors, language):
+    add, name, quantity, unit, warning, edit, close, submit = {
+        'ru': ('Добавить покупку', 'Название покупки', 'Количество', 'Единица измерения',
+               'Возможный дубль покупки', 'Изменить покупку', 'Отмена', 'Сохранить покупку'),
+        'en': ('Add purchase', 'Purchase name', 'Quantity', 'Unit',
+               'Possible duplicate purchase', 'Edit purchase', 'Cancel', 'Save purchase'),
+    }[language]
+    page = state_page(browser, errors, FIXTURE['owner'], language)
+    api = f"{UI}/api/weddings/{FIXTURE['weddingId']}/purchases"
+    headers = {'Authorization': 'Bearer ' + FIXTURE['owner']['tokens']['accessToken']}
+    existing_name = f'Плед — комплект {language}'
+    retired_name = f'плед, комплект {language}'
+    returned_name = f'Плед. комплект {language}'
+    rental_name = f'Плед: комплект {language}'
+    entered_name = f' ПЛЕД   комплект {language}'
+
+    def purchases():
+        response = page.request.get(api, headers=headers)
+        assert response.ok, f'Purchase list returned {response.status}'
+        return response.json()
+
+    try:
+        category = purchases()['categories'][0]['id']
+        base = {'quantity': '1', 'unit': 'pcs', 'categoryId': category, 'status': 'needed'}
+        for title, statuses in (
+            (existing_name, ('needed',)),
+            (retired_name, ('needed', 'cancelled')),
+            (returned_name, ('needed', 'ordered', 'received', 'returned')),
+        ):
+            row_id = uuid4()
+            for version, status in enumerate(statuses):
+                response = page.request.put(f'{api}/{row_id}', headers=headers,
+                                            data={**base, 'title': title, 'version': version, 'status': status})
+                assert response.ok, f'Purchase fixture returned {response.status}'
+        rental = {'pickupOn': '2027-06-13', 'returnOn': '2027-06-15',
+                  'depositAmount': 0, 'paidAmount': 0, 'refundedAmount': 0, 'disputedAmount': 0}
+        response = page.request.put(f'{api}/{uuid4()}', headers=headers,
+                                    data={**base, 'title': rental_name, 'version': 0, 'rental': rental})
+        assert response.ok, f'Rental fixture returned {response.status}'
+        before = {row['id']: row for row in purchases()['items']}
+        writes = []
+
+        def record_write(request):
+            if request.method == 'PUT' and request.url.startswith(api + '/'):
+                writes.append(request.url)
+
+        page.on('request', record_write)
+
+        page.goto(UI + '/wedding/purchases')
+        existing = page.get_by_role('article').filter(has=page.get_by_role('heading', name=existing_name, exact=True))
+        notice = page.get_by_role('status').filter(has_text=warning)
+        for title in (existing_name, returned_name):
+            page.get_by_role('button', name=f'{edit} · {title}', exact=True).click()
+            expect(notice).to_have_count(0)
+            page.get_by_role('button', name=close, exact=True).click()
+
+        add_button = page.get_by_role('button', name=add, exact=True)
+        tab_to(page, add_button)
+        page.keyboard.press('Enter')
+        title = page.get_by_label(name, exact=True)
+        expect(title).to_be_focused()
+        title.fill('Другой товар')
+        expect(notice).to_have_count(0)
+        title.fill(entered_name)
+        expect(notice).to_be_visible()
+        link = page.get_by_role('link', name=existing_name, exact=True)
+        for title_excluded in (retired_name, returned_name, rental_name):
+            expect(page.get_by_role('link', name=title_excluded, exact=True)).to_have_count(0)
+        for width in (320, 390, 480):
+            page.set_viewport_size({'width': width, 'height': 844})
+            assert link.evaluate('el => el.getBoundingClientRect().right <= innerWidth')
+        page.get_by_label(quantity, exact=True).fill('2')
+        page.get_by_label(unit, exact=True).fill('pcs')
+        title.focus()
+        tab_to(page, link)
+        page.keyboard.press('Enter')
+        expect(existing).to_be_focused()
+        expect(title).to_have_value(entered_name)
+        expect(page.get_by_label(quantity, exact=True)).to_have_value('2')
+        assert not writes
+        assert {row['id']: row for row in purchases()['items']} == before
+
+        saved = save(page, submit, 200).json()
+        assert saved['id'] not in before and saved['title'] == entered_name.strip() and saved['quantity'] == '2'
+        assert writes == [f"{api}/{saved['id']}"]
+        after = {row['id']: row for row in purchases()['items']}
+        assert after.pop(saved['id']) == saved and after == before
+    finally:
+        page.close()
 
 
 def verify_rental_keyboard(browser, errors, lang):
@@ -212,16 +304,23 @@ def verify_live_access(browser, errors, *, section, edit, title_label, denial):
         expect(card.get_by_role('listitem').first).to_be_visible()
         page.get_by_role('button', name=f'{edit} · Проверенная правка', exact=True).click()
         draft = page.get_by_label(title_label, exact=True)
-        draft.fill('Проверяемый черновик')
+        draft_title = 'ПЛЕД комплект ru' if section == 'purchases' else 'Проверяемый черновик'
+        draft.fill(draft_title)
+        notice = page.get_by_role('status').filter(has_text='Возможный дубль покупки')
+        if section == 'purchases':
+            expect(notice).to_be_visible()
         context.set_offline(True)
         expect(page.get_by_text('Нет связи с сервером', exact=True)).to_be_visible()
         expect(heading).to_have_count(0)
         expect(draft).to_have_count(0)
+        expect(notice).to_have_count(0)
 
         with page.expect_response(is_list) as refreshed:
             context.set_offline(False)
         assert refreshed.value.status == 200
-        expect(draft).to_have_value('Проверяемый черновик')
+        expect(draft).to_have_value(draft_title)
+        if section == 'purchases':
+            expect(notice).to_be_visible()
 
         set_role(browser, 'helper')
         with page.expect_response(is_list) as refused:
@@ -230,6 +329,7 @@ def verify_live_access(browser, errors, *, section, edit, title_label, denial):
         expect(page.get_by_text(denial, exact=True)).to_be_visible()
         expect(heading).to_have_count(0)
         expect(draft).to_have_count(0)
+        expect(notice).to_have_count(0)
     finally:
         context.close()
 
@@ -363,9 +463,6 @@ def main():
                 for language in ('ru', 'en'):
                     verify_rental_keyboard(browser, errors, language)
                     passed.append('rental-return-keyboard-' + language)
-                verify_live_access(browser, errors, section='purchases', edit='Изменить покупку',
-                                   title_label='Название покупки', denial='Бюджет ведёт пара — у вашей роли к нему доступа нет.')
-                passed.append('purchase-access-recheck')
                 verify_live_access(browser, errors, section='item-sets', edit='Изменить вещь',
                                    title_label='Название вещи', denial='Наборы вещей доступны паре.')
                 passed.append('item-access-recheck')
@@ -373,6 +470,12 @@ def main():
                     for language in ('ru', 'en'):
                         verify_read_states(browser, errors, section, language)
                         passed.append(f'{section}-read-states-{language}')
+                for language in ('ru', 'en'):
+                    verify_possible_purchase_duplicate(browser, errors, language)
+                    passed.append('purchase-duplicate-' + language)
+                verify_live_access(browser, errors, section='purchases', edit='Изменить покупку',
+                                   title_label='Название покупки', denial='Бюджет ведёт пара — у вашей роли к нему доступа нет.')
+                passed.append('purchase-access-recheck')
                 assert not errors, errors
             finally:
                 browser.close()

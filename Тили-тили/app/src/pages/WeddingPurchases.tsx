@@ -19,6 +19,10 @@ const focus = 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visi
 const inputClass = `block w-full rounded-xl bg-[var(--bg)] px-3 py-2 text-sm text-[var(--ink)] ${focus}`
 const statusLabel = (status: PurchaseStatus, rental: boolean) =>
   rental && status === 'needed' ? t('Нужно арендовать') : rental && status === 'ordered' ? t('Аренда забронирована') : t(statusLabels[status])
+const purchaseTitleKey = (title: string) =>
+  title.normalize('NFKC').toLocaleLowerCase('ru-RU').replace(/[\p{P}\s]+/gu, ' ').trim()
+const isInactivePurchase = (status: PurchaseStatus) => status === 'cancelled' || status === 'returned'
+
 type RentalDraft = Record<keyof RentalDetails, string>
 const emptyRental: RentalDraft = {
   pickupOn: '', returnOn: '', depositAmount: '0', paidAmount: '0', refundedAmount: '0', disputedAmount: '0',
@@ -193,7 +197,8 @@ function PurchaseScreen({ weddingId }: { weddingId: string | null }) {
       </>}
       {list?.readOnly && <p className="text-sm text-[var(--soft)]">{t('Свадьба отменена — история доступна только для чтения')}</p>}
       {list && !items.length && !draft && <p className="text-sm text-[var(--soft)]">{t('Покупок пока нет')}</p>}
-      {visible.map(purchase => <article key={purchase.id} className="card p-4 space-y-2">
+      {visible.map(purchase => <article key={purchase.id} id={'purchase-' + purchase.id} tabIndex={-1}
+        className={`card p-4 space-y-2 ${focus}`}>
         <div className="flex flex-wrap justify-between items-start gap-2">
           <h2 className="font-bold break-words min-w-0">{purchase.title}</h2>
           <span className="text-sm font-semibold text-[var(--soft)]">{statusLabel(purchase.status, !!purchase.rental)}</span>
@@ -227,6 +232,12 @@ function PurchaseEditor({ formRef, draft, list, setDraft, busy, saveBlocked, sav
   draft: Draft; list: PurchaseList; setDraft: (value: Draft | null) => void; busy: boolean; saveBlocked: boolean; save: (event: FormEvent) => void
 }) {
   const change = (field: keyof Draft, value: string) => setDraft({ ...draft, [field]: value })
+  const title = purchaseTitleKey(draft.title)
+  const possibleDuplicates = !title || draft.rental || isInactivePurchase(draft.status)
+    ? []
+    : list.items.filter(purchase => purchase.id !== draft.id && !purchase.rental
+      && !isInactivePurchase(purchase.status)
+      && purchaseTitleKey(purchase.title) === title)
   const selects = [
     { field: 'categoryId', label: key('Категория бюджета'), options: list.categories, required: true },
     { field: 'assigneeId', label: key('Ответственный'), options: list.members, required: false },
@@ -262,6 +273,15 @@ function PurchaseEditor({ formRef, draft, list, setDraft, busy, saveBlocked, sav
         {draft.statusOptions.map(status => <option key={status} value={status}>{statusLabel(status, !!draft.rental)}</option>)}
       </select></label>
     </fieldset>
+    <div className={possibleDuplicates.length ? 'mt-3 rounded-xl bg-[var(--bg)] p-3 text-sm' : 'sr-only'}>
+      <p role="status" className="font-semibold">{possibleDuplicates.length ? t('Возможный дубль покупки') : null}</p>
+      {possibleDuplicates.length > 0 && <ul className="mt-1 list-disc space-y-1 pl-5">
+        {possibleDuplicates.map(purchase => <li key={purchase.id}>
+          <a href={'#purchase-' + purchase.id} className={`break-words underline ${focus}`}>{purchase.title}</a>
+          {' · '}{purchase.quantity} {purchase.unit}{' · '}{statusLabel(purchase.status, false)}
+        </li>)}
+      </ul>}
+    </div>
     <div className="mt-3 flex gap-2 items-end">
       <button type="submit" aria-disabled={busy || saveBlocked} className={`press grad rounded-xl px-4 py-2 font-semibold text-[var(--on-grad)] aria-disabled:opacity-50 ${focus}`}>{t(draft.rental ? 'Сохранить аренду' : 'Сохранить покупку')}</button>
       <button type="button" disabled={busy} className={`press rounded-xl px-3 py-2 ${focus}`} onClick={() => setDraft(null)}>{t('Отмена')}</button>

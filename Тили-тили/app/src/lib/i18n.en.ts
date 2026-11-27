@@ -3000,6 +3000,7 @@ Object.assign(EN, {
   'В архиве': 'Archived',
   'Открыть связанную покупку или аренду': 'Open linked purchase or rental',
   'Возможное совпадение с покупкой или арендой': 'Possible match with a purchase or rental',
+  'Возможный дубль покупки': 'Possible duplicate purchase',
   'Изменить вещь': 'Edit item',
   'История вещи': 'Item history',
   'У кого хранится': 'Held by',
