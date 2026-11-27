@@ -1,6 +1,6 @@
 import type { OutputBundle, OutputChunk } from 'rollup'
 
-export const CRITICAL_PAGES = ['Smart.tsx', 'Tools.tsx', 'VendorPrograms.tsx', 'GuestVendor.tsx'] as const
+export const CRITICAL_PAGES = ['Smart.tsx', 'Tools.tsx', 'VendorPrograms.tsx', 'GuestVendor.tsx', 'Invite.tsx'] as const
 
 /** Follow actual static imports; lazy critical pages need their shared chunks too. */
 export function criticalAssets(bundle: OutputBundle): string[] {

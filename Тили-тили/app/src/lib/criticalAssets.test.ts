@@ -1,7 +1,7 @@
 import { runInNewContext } from 'node:vm'
 import { describe, expect, it } from 'vitest'
 import type { OutputBundle, OutputChunk } from 'rollup'
-import { CRITICAL_PAGES, criticalAssets } from '../../build/criticalAssets'
+import { criticalAssets } from '../../build/criticalAssets'
 import { projectFile } from '@/test/projectFiles'
 
 function fixture(): OutputBundle {
@@ -11,18 +11,33 @@ function fixture(): OutputBundle {
     ['assets/main-hash.js', chunk('assets/main-hash.js', [], ['assets/shared-hash.js'], true)],
     ['assets/shared-hash.js', chunk('assets/shared-hash.js')],
     ['assets/not-critical.js', chunk('assets/not-critical.js', ['C:/src/pages/Admin.tsx'])],
-    ...CRITICAL_PAGES.map((page, i) => [`assets/critical-${i}.js`, chunk(`assets/critical-${i}.js`, ['C:\\src\\pages\\' + page], ['assets/shared-hash.js'])]),
+    ...['Smart', 'Tools', 'VendorPrograms', 'GuestVendor'].map(page => {
+      const file = `assets/${page}-hash.js`
+      return [file, chunk(file, [`C:\\src\\pages\\${page}.tsx`], ['assets/shared-hash.js'])]
+    }),
+    ['assets/invite-hash.js', chunk('assets/invite-hash.js', ['/src/pages/Invite.tsx'], ['assets/guest-programme.js'])],
+    ['assets/guest-programme.js', chunk('assets/guest-programme.js')],
   ])
 }
 describe('actual-build critical static assets', () => {
   it('includes entry/critical routes/transitive shared imports once, not every lazy route or API', () => {
     const assets = criticalAssets(fixture())
-    expect(assets).toHaveLength(6)
-    expect(assets).toContain('./assets/shared-hash.js')
+    expect(assets.filter(file => file === './assets/shared-hash.js')).toHaveLength(1)
+    for (const page of ['Smart', 'Tools', 'VendorPrograms', 'GuestVendor']) {
+      expect(assets).toContain(`./assets/${page}-hash.js`)
+    }
+    expect(assets).toContain('./assets/main-hash.js')
     expect(assets).not.toContain('./assets/not-critical.js')
   })
+  it('precaches the invite route and its own programme import before a cold offline deep link', () => {
+    const assets = criticalAssets(fixture())
+    expect(assets).toContain('./assets/invite-hash.js')
+    expect(assets).toContain('./assets/guest-programme.js')
+  })
   it('refuses missing critical route, missing import and unsafe nonstatic output', () => {
-    const missing = fixture(); delete missing['assets/critical-0.js']; expect(() => criticalAssets(missing)).toThrow('page missing')
+    const missing = fixture()
+    delete missing['assets/invite-hash.js']
+    expect(() => criticalAssets(missing)).toThrow('page missing from build: Invite.tsx')
     const broken = fixture(); delete broken['assets/shared-hash.js']; expect(() => criticalAssets(broken)).toThrow('import missing')
     const unsafe = fixture(); const shared = unsafe['assets/shared-hash.js']
     unsafe['api/private.js'] = { ...shared, fileName: 'api/private.js' }
