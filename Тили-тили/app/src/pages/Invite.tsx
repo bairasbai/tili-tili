@@ -9,7 +9,7 @@ import type { components } from '@/lib/api/schema'
 import type { GuestInvitedEvent } from '@/lib/api/weddingEvents'
 import {
   bookHotelRoom, getGuestDay, getGuestDayMessages, getGuestEventDaySnapshot, getGuestHotels, getGuestMenu, getGuestShuttle, getRsvp, guestToken,
-  joinShuttle, postGuestDayMessage, saveGuestToken, sendFamilyRsvp, sendRsvp, voteMenu,
+  joinShuttle, postGuestDayMessage, saveGuestToken, sendFamilyRsvp, sendRsvp, voteMenu, type RsvpPrivateNotes,
 } from '@/lib/api/guest'
 import { getGuestEventRsvp, requestGuestEventChange, saveGuestEventAnswers, type EventRsvpPerson, type EventRsvpRequest, type GuestRsvpEvent } from '@/lib/api/eventRsvp'
 import { dressPalettes } from '@/lib/dressPalettes'
@@ -257,7 +257,7 @@ function MainInvite() {
     </div>
   )
 
-  return <InviteView page={page} token={token} day={day} opened={opened} setOpened={setOpened} scrollY={scrollY} progress={progress}
+  return <InviteView key={token} page={page} token={token} day={day} opened={opened} setOpened={setOpened} scrollY={scrollY} progress={progress}
     rootRef={root} onAnswered={q.reload} online={online} refreshing={q.refreshing} showThanks={online && !q.refreshing && q.error === null} />
 }
 
@@ -346,17 +346,16 @@ const DIETS: [string | null, string][] = [
   ['kosher', 'Кошер'], ['gluten_free', 'Без глютена'], ['other', 'Другое'],
 ]
 
-interface RsvpMemberView {
+interface RsvpMemberView extends RsvpPrivateNotes {
   guestId: string
   name: string
   status: 'yes' | 'no' | 'pending'
   diet?: string | null
-  dietNote?: string | null
   transfer?: 'need' | 'own' | null
   isPlaceholder?: boolean
 }
 
-interface RsvpPage {
+interface RsvpPage extends RsvpPrivateNotes {
   hasLodging?: boolean
   partyId?: string
   guestName?: string
@@ -365,7 +364,6 @@ interface RsvpPage {
      видел, что выбрал, и менял ответ вслепую. */
   plusOne?: boolean
   diet?: string | null
-  dietNote?: string | null
   transfer?: string | null
   members?: RsvpMemberView[]
   events?: GuestInvitedEvent[]
@@ -384,6 +382,51 @@ interface RsvpPage {
        но контракт позволяет — раздел дня читает его, когда он есть. */
     tz?: string
   }
+}
+
+function updatedGuestNotes(draft: RsvpPrivateNotes, saved: RsvpPrivateNotes) {
+  const dietNote = draft.dietNote?.trim() || null
+  const childNeeds = draft.childNeeds?.trim() || null
+  const accessibilityNeeds = draft.accessibilityNeeds?.trim() || null
+  return {
+    ...(dietNote !== (saved.dietNote ?? null) ? { dietNote } : {}),
+    ...(childNeeds !== (saved.childNeeds ?? null) ? { childNeeds } : {}),
+    ...(accessibilityNeeds !== (saved.accessibilityNeeds ?? null) ? { accessibilityNeeds } : {}),
+  }
+}
+
+function RsvpNotesFields({ notes, change, disabled, T }: {
+  notes: RsvpPrivateNotes
+  change: (notes: RsvpPrivateNotes) => void
+  disabled: boolean
+  T: Theme
+}) {
+  const fields = [
+    { key: 'dietNote', label: 'Ограничения по еде', placeholder: 'Например: аллергия на орехи' },
+    { key: 'childNeeds', label: 'Потребности ребёнка', placeholder: 'Например: детский стульчик' },
+    { key: 'accessibilityNeeds', label: 'Условия доступности', placeholder: 'Например: вход без ступеней' },
+  ] as const
+  return (
+    <div className="mt-3 space-y-2">
+      <p className="text-[10.5px]" style={{ color: T.soft }}>
+        {t('Эти заметки видят пара и участники вашего приглашения.')}
+      </p>
+      {fields.map(({ key, label, placeholder }) => (
+        <label key={key} className="block">
+          <span className="text-[10.5px] font-semibold">{t(label)}</span>
+          <input
+            value={notes[key] ?? ''}
+            onChange={(event) => change({ [key]: event.target.value })}
+            disabled={disabled}
+            maxLength={300}
+            placeholder={t(placeholder)}
+            className={`block w-full mt-1 min-h-11 px-4 rounded-full text-[11px] ${guestChoiceFocus}`}
+            style={{ background: T.card, color: T.ink }}
+          />
+        </label>
+      ))}
+    </div>
+  )
 }
 
 /* Тело вынесено отдельно: данные нужны до первого хука блоков гостя, а хуки
@@ -422,7 +465,8 @@ function InviteView({
      ответа, а не с чистого листа. */
   const [plus, setPlus] = useState<boolean | null>(page.plusOne ?? null)
   const [diet, setDiet] = useState<string | null>(page.diet ?? null)
-  const [dietNote, setDietNote] = useState(page.dietNote ?? '')
+  const [editedNotes, setEditedNotes] = useState<RsvpPrivateNotes>({})
+  const notes = { dietNote: page.dietNote, childNeeds: page.childNeeds, accessibilityNeeds: page.accessibilityNeeds, ...editedNotes }
   const [transfer, setTransfer] = useState<'need' | 'own' | null>(page.transfer === 'need' || page.transfer === 'own' ? page.transfer : null)
   const [editing, setEditing] = useState(false)
   const [sending, setSending] = useState(false)
@@ -443,15 +487,16 @@ function InviteView({
     try {
       await sendRsvp(token, status, status === 'yes' ? (plus ?? false) : undefined, undefined,
         status === 'yes'
-          ? { diet, ...(diet === 'other' && dietNote.trim() ? { dietNote: dietNote.trim() } : {}), ...(transfer ? { transfer } : {}) }
+          ? { diet, ...updatedGuestNotes(notes, page), ...(transfer ? { transfer } : {}) }
           : {})
       setEditing(false)
+      setEditedNotes({})
       onAnswered()
     } catch (e) { setErr(explainError(e)) } finally { setSending(false) }
   })()
 
-  const dietLabel = (id: string | null | undefined, note: string | null | undefined) =>
-    id === 'other' && note ? note : t(DIETS.find(d => d[0] === (id ?? null))?.[1] ?? 'Без ограничений')
+  const dietLabel = (id: string | null | undefined) =>
+    t(DIETS.find(d => d[0] === (id ?? null))?.[1] ?? 'Без ограничений')
 
   /* «Сейчас» — на монтировании: `Date.now()` в теле рендера нечист (R-04). */
   const [now] = useState(() => Date.now())
@@ -634,10 +679,7 @@ function InviteView({
                         style={diet === id ? { background: T.accentGrad, color: '#FFF7F0' } : { background: T.bg, color: T.ink }}>{t(label)}</button>
                     ))}
                   </div>
-                  {diet === 'other' && (
-                    <input value={dietNote} onChange={e => setDietNote(e.target.value.slice(0, 300))} placeholder={t('Например: аллергия на орехи')}
-                      aria-label={t('Ограничения по еде')} className="w-full mt-2 h-[40px] px-4 rounded-full text-[12px]" style={{ background: T.bg, color: T.ink }} />
-                  )}
+                  <RsvpNotesFields notes={notes} change={(change) => setEditedNotes((current) => ({ ...current, ...change }))} disabled={busy} T={T} />
                 </div>
                 <div className="mt-4">
                   <p className="text-[11px] font-semibold flex items-center gap-1.5"><Bus size={12} style={{ color: T.accent }} />{t('Как доберётесь?')}</p>
@@ -666,9 +708,12 @@ function InviteView({
                 {/* Что именно сказал гость — с сервера, а не из памяти вкладки:
                     ответ с другого устройства здесь тот же. */}
                 {page.status === 'yes' && (
-                  <p className="text-[11.5px] mt-2 font-medium">
-                    {[page.plusOne ? t('С +1') : t('Один/одна'), dietLabel(page.diet, page.dietNote), page.transfer === 'need' ? t('Нужен трансфер') : page.transfer === 'own' ? t('Доберусь сам(а)') : null].filter(Boolean).join(' · ')}
-                  </p>
+                  <div className="text-[11.5px] mt-2 font-medium break-words">
+                    <p>{[page.plusOne ? t('С +1') : t('Один/одна'), page.diet || !page.dietNote ? dietLabel(page.diet) : null, page.transfer === 'need' ? t('Нужен трансфер') : page.transfer === 'own' ? t('Доберусь сам(а)') : null].filter(Boolean).join(' · ')}</p>
+                    {page.dietNote && <p>{t('Ограничения по еде')} · {page.dietNote}</p>}
+                    {page.childNeeds && <p>{t('Потребности ребёнка')} · {page.childNeeds}</p>}
+                    {page.accessibilityNeeds && <p>{t('Условия доступности')} · {page.accessibilityNeeds}</p>}
+                  </div>
                 )}
                 {page.status === 'yes' && (
                   <button disabled={busy} onClick={() => setEditing(true)} className="press mt-3 text-[11.5px] font-semibold underline disabled:opacity-50" style={{ color: T.soft }}>{t('Изменить ответ')}</button>
@@ -768,17 +813,14 @@ function FamilyRsvpForm({
   T: Theme
   onSaved: () => void
 }) {
-  const [draft, setDraft] = useState(() => members.map((member) => ({ ...member })))
+  const [edits, setEdits] = useState<Record<string, Partial<RsvpMemberView>>>({})
+  const draft = members.map((member) => ({ ...member, ...edits[member.guestId] }))
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const groupId = useId()
 
-  useEffect(() => {
-    setDraft(members.map((member) => ({ ...member })))
-  }, [members])
-
   const patch = (guestId: string, change: Partial<RsvpMemberView>) =>
-    setDraft((current) => current.map((member) => member.guestId === guestId ? { ...member, ...change } : member))
+    setEdits((current) => ({ ...current, [guestId]: { ...current[guestId], ...change } }))
 
   const save = () => void (async () => {
     setSending(true)
@@ -790,11 +832,12 @@ function FamilyRsvpForm({
         ...(member.status === 'yes'
           ? {
               diet: member.diet ?? null,
-              dietNote: member.diet === 'other' ? member.dietNote ?? null : null,
+              ...updatedGuestNotes(member, members.find((saved) => saved.guestId === member.guestId) ?? {}),
               transfer: member.transfer ?? null,
             }
           : {}),
       })))
+      setEdits({})
       onSaved()
     } catch (e) {
       setError(explainError(e))
@@ -845,16 +888,7 @@ function FamilyRsvpForm({
                   >{t(label)}</button>
                 ))}
               </div>
-              {member.diet === 'other' && (
-                <input
-                  value={member.dietNote ?? ''}
-                  onChange={(e) => patch(member.guestId, { dietNote: e.target.value.slice(0, 300) })}
-                  placeholder={t('Например: аллергия на орехи')}
-                  aria-label={t('Ограничения по еде')}
-                  className={`w-full mt-2 min-h-11 px-4 rounded-full text-[11px] ${guestChoiceFocus}`}
-                  style={{ background: T.card, color: T.ink }}
-                />
-              )}
+              <RsvpNotesFields notes={member} change={(change) => patch(member.guestId, change)} disabled={busy || sending} T={T} />
               <p className="text-[10.5px] font-semibold mt-4">{t('Как доберётесь?')}</p>
               <div className="grid grid-cols-2 gap-2 mt-2">
                 {([['need', t('Нужен трансфер')], ['own', t('Доберусь сам(а)')]] as const).map(([id, label]) => (

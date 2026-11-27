@@ -80,18 +80,22 @@ export async function getRsvp(token: string) {
   finally { permit?.release() }
 }
 
-/** Еда и трансфер гостя — то, что он сам сообщает в RSVP (контракт v0.24). */
-export interface RsvpExtra {
+export interface RsvpPrivateNotes {
+  dietNote?: string | null
+  childNeeds?: string | null
+  accessibilityNeeds?: string | null
+}
+
+/** Еда и трансфер гостя — то, что он сам сообщает в RSVP. */
+export interface RsvpExtra extends RsvpPrivateNotes {
   diet?: string | null
-  dietNote?: string
   transfer?: 'need' | 'own'
 }
 
-export interface FamilyRsvpMember {
+export interface FamilyRsvpMember extends RsvpPrivateNotes {
   guestId: string
   status: 'yes' | 'no'
   diet?: string | null
-  dietNote?: string | null
   transfer?: 'need' | 'own' | null
 }
 
@@ -106,7 +110,9 @@ export const sendRsvp = (token: string, status: 'yes' | 'no', plusOne?: boolean,
     ...(plusOne !== undefined ? { plusOne } : {}),
     ...(comment ? { comment } : {}),
     ...(extra.diet !== undefined ? { diet: extra.diet } : {}),
-    ...(extra.dietNote ? { dietNote: extra.dietNote } : {}),
+    ...(extra.dietNote !== undefined ? { dietNote: extra.dietNote } : {}),
+    ...(extra.childNeeds !== undefined ? { childNeeds: extra.childNeeds } : {}),
+    ...(extra.accessibilityNeeds !== undefined ? { accessibilityNeeds: extra.accessibilityNeeds } : {}),
     ...(extra.transfer ? { transfer: extra.transfer } : {}),
   })
 

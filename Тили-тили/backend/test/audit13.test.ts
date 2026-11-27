@@ -340,6 +340,8 @@ describe('одноразовая ссылка гостя в списке (ERR: �
     table_id: null,
     diet: null,
     diet_note: null,
+    child_needs: null,
+    accessibility_needs: null,
     menu_option_id: null,
     transfer: null,
     bus_id: null,

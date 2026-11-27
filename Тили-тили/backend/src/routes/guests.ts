@@ -28,7 +28,19 @@ const SHARE_TTL_DAYS = 30
  */
 const REDEEM_RETRY_MINUTES = 10
 
-interface GuestRow {
+interface GuestNeedsRow {
+  child_needs: string | null
+  accessibility_needs: string | null
+}
+
+const optionalGuestNote = { type: 'string', nullable: true, maxLength: 300 }
+const guestNeedsProperties = { childNeeds: optionalGuestNote, accessibilityNeeds: optionalGuestNote }
+
+function guestNeeds(row: GuestNeedsRow) {
+  return { childNeeds: row.child_needs, accessibilityNeeds: row.accessibility_needs }
+}
+
+interface GuestRow extends GuestNeedsRow {
   id: string
   name: string
   party_id: string
@@ -55,7 +67,7 @@ const GUEST_COLUMNS = `
   g.id, g.name, g.party_id, g.party_position, g.is_placeholder,
   (select count(*)::int from guests family where family.party_id = g.party_id) as party_size,
   g.plus_one, g.group_name, g.phone, g.comment, g.rsvp, g.table_id, g.diet, g.diet_note,
-  g.menu_option_id, g.transfer,
+  g.child_needs, g.accessibility_needs, g.menu_option_id, g.transfer,
   (select b.bus_id from bus_bookings b join bus_routes r on r.id=b.bus_id
     where b.guest_id=g.id and r.wedding_id=g.wedding_id and r.program_event_id is null and r.direction='outbound'
     order by b.bus_id limit 1) as bus_id,
@@ -106,12 +118,11 @@ export function toGuest(r: GuestRow, asCouple: boolean) {
     group: r.group_name,
     /* Телефон вводит пара ради `POST …/guests/remind`. Гостевые пути
      * (`/rsvp`, `/gifts`) этот объект не отдают. */
-    ...(asCouple ? { phone: r.phone, comment: r.comment } : {}),
+    ...(asCouple ? { phone: r.phone, comment: r.comment, dietNote: r.diet_note, ...guestNeeds(r) } : {}),
     hasPhone: Boolean(r.phone),
     status: r.rsvp,
     tableId: r.table_id,
     diet: r.diet,
-    dietNote: r.diet_note,
     menuOptionId: r.menu_option_id,
     transfer: r.transfer,
     busId: r.bus_id,
@@ -558,6 +569,9 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
       return db().tx(async (client) => {
         const role = await lockSeatingAccess(client, request)
         assertPhoneByCouple(role, has('phone'))
+        if (has('dietNote') && !seesInviteUrl(role)) {
+          throw new AppError(403, 'forbidden', 'Личные заметки о питании доступны только паре')
+        }
         const phone = body.phone === null ? null : normalizedPhoneOr422(body.phone as string | undefined)
         const participationIds = new Set<string>(has('status') ? [guestId] : [])
         await client.query("select set_config('tili.timeline_actor',$1,true)", [request.caller!.userId])
@@ -572,11 +586,10 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
           table_id: string | null
           group_name: string | null
           diet: string | null
-          diet_note: string | null
           transfer: string | null
           menu_option_id: string | null
         }>(
-          `select party_id, party_position, name, rsvp, table_id, group_name, diet, diet_note, transfer, menu_option_id
+          `select party_id, party_position, name, rsvp, table_id, group_name, diet, transfer, menu_option_id
              from guests where id = $1 and wedding_id = $2 for update`,
           [guestId, weddingId],
         )
@@ -709,13 +722,12 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
             const effectiveStatus = (body.status as string | undefined) ?? current.rsvp
             const effectiveGroup = has('group') ? (body.group as string | null) : current.group_name
             const effectiveDiet = has('diet') ? (body.diet as string | null) : current.diet
-            const effectiveDietNote = has('dietNote') ? (body.dietNote as string | null) : current.diet_note
             const effectiveTransfer = has('transfer') ? (body.transfer as string | null) : current.transfer
             await client.query(
               `insert into guests
-                 (id, wedding_id, name, rsvp, plus_one, group_name, diet, diet_note, transfer,
+                 (id, wedding_id, name, rsvp, plus_one, group_name, diet, transfer,
                   table_id, menu_option_id, rsvp_token, party_id, party_position, is_placeholder)
-               values ($1,$2,$3,$4,false,$5,$6,$7,$8,$9,$10,$11,$12,2,true)`,
+               values ($1,$2,$3,$4,false,$5,$6,$7,$8,$9,$10,$11,2,true)`,
               [
                 companionId,
                 weddingId,
@@ -723,7 +735,6 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
                 effectiveStatus,
                 effectiveGroup,
                 effectiveDiet,
-                effectiveDietNote,
                 effectiveTransfer,
                 effectiveTable,
                 current.menu_option_id,
@@ -758,7 +769,7 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
 
         /* Legacy family fields were shared by the old +1 row. Keep generated
          * placeholders in sync when the pair edits the primary through the
-         * old single-person route. A real named member is edited separately. */
+         * old single-person route. Private notes always belong to one person. */
         if (!singleSeat && current.party_position === 1) {
           const synced = await client.query<{ id: string }>(
             `update guests set
@@ -766,8 +777,7 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
                  table_id = case when $4 then $5::uuid else table_id end,
                  group_name = case when $6 then $7 else group_name end,
                  diet = case when $8 then $9 else diet end,
-                 diet_note = case when $10 then $11 else diet_note end,
-                 transfer = case when $12 then $13 else transfer end
+                 transfer = case when $10 then $11 else transfer end
                where party_id = $1 and party_position = 2 and is_placeholder returning id`,
             [
               current.party_id,
@@ -779,8 +789,6 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
               (body.group as string) ?? null,
               has('diet'),
               (body.diet as string) ?? null,
-              has('dietNote'),
-              (body.dietNote as string) ?? null,
               has('transfer'),
               (body.transfer as string) ?? null,
             ],
@@ -1156,8 +1164,8 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
       transfer: string | null
       party_position: number
       is_placeholder: boolean
-    }>(
-      `select id, name, rsvp, diet, diet_note, transfer, party_position, is_placeholder
+    } & GuestNeedsRow>(
+      `select id, name, rsvp, diet, diet_note, child_needs, accessibility_needs, transfer, party_position, is_placeholder
          from guests
         where party_id = $1
         order by party_position, created_at, id for share`,
@@ -1198,6 +1206,7 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
       plusOne: members.length > 1,
       diet: primary.diet,
       dietNote: primary.diet_note,
+      ...guestNeeds(primary),
       transfer: primary.transfer,
       events: await familyEventInvitations(client, guest.weddingId, guest.partyId),
       members: members.map((m) => ({
@@ -1206,6 +1215,7 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
         status: m.rsvp,
         diet: m.diet,
         dietNote: m.diet_note,
+        ...guestNeeds(m),
         transfer: m.transfer,
         isPlaceholder: m.is_placeholder,
       })),
@@ -1242,7 +1252,8 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
               nullable: true,
               enum: [null, 'vegetarian', 'vegan', 'halal', 'kosher', 'gluten_free', 'other'],
             },
-            dietNote: { type: 'string', nullable: true, maxLength: 300 },
+            dietNote: optionalGuestNote,
+            ...guestNeedsProperties,
             transfer: { type: 'string', nullable: true, enum: [null, 'need', 'own'] },
             members: {
               type: 'array',
@@ -1260,7 +1271,8 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
                     nullable: true,
                     enum: [null, 'vegetarian', 'vegan', 'halal', 'kosher', 'gluten_free', 'other'],
                   },
-                  dietNote: { type: 'string', nullable: true, maxLength: 300 },
+                  dietNote: optionalGuestNote,
+                  ...guestNeedsProperties,
                   transfer: { type: 'string', nullable: true, enum: [null, 'need', 'own'] },
                 },
               },
@@ -1277,12 +1289,16 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
         comment?: string
         diet?: string | null
         dietNote?: string | null
+        childNeeds?: string | null
+        accessibilityNeeds?: string | null
         transfer?: string | null
         members?: {
           guestId: string
           status: 'yes' | 'no'
           diet?: string | null
           dietNote?: string | null
+          childNeeds?: string | null
+          accessibilityNeeds?: string | null
           transfer?: string | null
         }[]
       }
@@ -1308,10 +1324,9 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
           rsvp: string
           table_id: string | null
           diet: string | null
-          diet_note: string | null
           transfer: string | null
         }>(
-          `select id, name, party_position, is_placeholder, rsvp, table_id, diet, diet_note, transfer
+          `select id, name, party_position, is_placeholder, rsvp, table_id, diet, transfer
              from guests
             where party_id = $1
             order by id
@@ -1332,9 +1347,9 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
             const companionId = uuidv7()
             await client.query(
               `insert into guests
-                 (id, wedding_id, name, rsvp, plus_one, group_name, diet, diet_note, transfer,
+                 (id, wedding_id, name, rsvp, plus_one, group_name, diet, transfer,
                   table_id, menu_option_id, rsvp_token, party_id, party_position, is_placeholder)
-               select $2, wedding_id, 'Спутник ' || name, $3, false, group_name, diet, diet_note, transfer,
+               select $2, wedding_id, 'Спутник ' || name, $3, false, group_name, diet, transfer,
                       table_id, menu_option_id, $4, party_id, 2, true
                  from guests where id = $1`,
               [primary.id, companionId, body.status ?? primary.rsvp, newGuestToken()],
@@ -1370,6 +1385,8 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
           status: body.status!,
           ...(has(body, 'diet') ? { diet: body.diet } : {}),
           ...(has(body, 'dietNote') ? { dietNote: body.dietNote } : {}),
+          ...(has(body, 'childNeeds') ? { childNeeds: body.childNeeds } : {}),
+          ...(has(body, 'accessibilityNeeds') ? { accessibilityNeeds: body.accessibilityNeeds } : {}),
           ...(has(body, 'transfer') ? { transfer: body.transfer } : {}),
         }]
         const ids = new Set(locked.map((m) => m.id))
@@ -1392,6 +1409,8 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
                     diet = case when $6 then $7 else diet end,
                     diet_note = case when $8 then $9 else diet_note end,
                     transfer = case when $10 then $11 else transfer end,
+                    child_needs = case when $12 then $13 else child_needs end,
+                    accessibility_needs = case when $14 then $15 else accessibility_needs end,
                     plus_one = false
               where id = $1 and party_id = $2`,
             [
@@ -1402,10 +1421,14 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
               body.comment ?? null,
               has(item, 'diet'),
               item.diet ?? null,
-              has(item, 'diet') || has(item, 'dietNote'),
+              has(item, 'dietNote'),
               item.dietNote ?? null,
               has(item, 'transfer'),
               item.transfer ?? null,
+              has(item, 'childNeeds'),
+              item.childNeeds?.trim() || null,
+              has(item, 'accessibilityNeeds'),
+              item.accessibilityNeeds?.trim() || null,
             ],
           )
           participationIds.add(item.guestId)
@@ -1437,8 +1460,8 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
           diet: string | null
           diet_note: string | null
           transfer: string | null
-        }>(
-          `select id, name, rsvp, diet, diet_note, transfer
+        } & GuestNeedsRow>(
+          `select id, name, rsvp, diet, diet_note, child_needs, accessibility_needs, transfer
              from guests where party_id = $1 order by party_position, created_at, id`,
           [guest.partyId],
         )
@@ -1455,6 +1478,7 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
           status: m.rsvp,
           diet: m.diet,
           dietNote: m.diet_note,
+          ...guestNeeds(m),
           transfer: m.transfer,
         })),
       }

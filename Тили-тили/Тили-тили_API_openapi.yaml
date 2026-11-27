@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Тили-тили API
-  version: 0.140.2
+  version: 0.141.0
   description: >
     Контракт бэкенда для PWA «Тили-тили» (tili-tili.ru) — свадебный планировщик.
 
@@ -3181,6 +3181,7 @@ paths:
                   type: string
                   nullable: true
                   maxLength: 300
+                  description: Изменение личной заметки доступно паре.
                 transfer:
                   type: string
                   nullable: true
@@ -3424,6 +3425,14 @@ paths:
                   dietNote:
                     type: string
                     nullable: true
+                  childNeeds:
+                    type: string
+                    nullable: true
+                    maxLength: 300
+                  accessibilityNeeds:
+                    type: string
+                    nullable: true
+                    maxLength: 300
                   transfer:
                     type: string
                     nullable: true
@@ -3446,6 +3455,7 @@ paths:
       description: |
         Ответ относится только к основной программе, не ко всем мероприятиям из events[].
         Новый клиент передаёт members[] и меняет только перечисленных людей.
+        Личные заметки о питании, ребёнке и доступности читают эта семья и пара. Для dietNote, childNeeds и accessibilityNeeds пропуск сохраняет значение, null очищает его.
         Старый payload status/plusOne остаётся переходно совместимым:
         plusOne материализуется как реальная placeholder-персона, а не
         увеличивает скрытый счётчик. Отказ одной персоны освобождает только
@@ -3491,6 +3501,14 @@ paths:
                   type: string
                   nullable: true
                   maxLength: 300
+                childNeeds:
+                  type: string
+                  nullable: true
+                  maxLength: 300
+                accessibilityNeeds:
+                  type: string
+                  nullable: true
+                  maxLength: 300
                 transfer:
                   type: string
                   nullable: true
@@ -3528,6 +3546,14 @@ paths:
                           - gluten_free
                           - other
                       dietNote:
+                        type: string
+                        nullable: true
+                        maxLength: 300
+                      childNeeds:
+                        type: string
+                        nullable: true
+                        maxLength: 300
+                      accessibilityNeeds:
                         type: string
                         nullable: true
                         maxLength: 300
@@ -19313,7 +19339,17 @@ components:
         dietNote:
           type: string
           nullable: true
-          description: аллергии словами, когда enum не хватает
+          description: Аллергии и другие личные пожелания о питании. Поле видит только пара.
+        childNeeds:
+          type: string
+          nullable: true
+          maxLength: 300
+          description: Что нужно подготовить для ребёнка. Поле видит только пара.
+        accessibilityNeeds:
+          type: string
+          nullable: true
+          maxLength: 300
+          description: Какие условия доступности нужны гостю. Поле видит только пара.
         menuOptionId:
           type: string
           nullable: true
@@ -19376,6 +19412,14 @@ components:
         dietNote:
           type: string
           nullable: true
+        childNeeds:
+          type: string
+          nullable: true
+          maxLength: 300
+        accessibilityNeeds:
+          type: string
+          nullable: true
+          maxLength: 300
         transfer:
           type: string
           nullable: true

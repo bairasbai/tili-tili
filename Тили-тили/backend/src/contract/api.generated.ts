@@ -4062,6 +4062,7 @@ export interface paths {
                         phone?: string | null;
                         /** @enum {string|null} */
                         diet?: null | "vegetarian" | "vegan" | "halal" | "kosher" | "gluten_free" | "other";
+                        /** @description Изменение личной заметки доступно паре. */
                         dietNote?: string | null;
                         /** @enum {string|null} */
                         transfer?: null | "need" | "own";
@@ -4327,6 +4328,8 @@ export interface paths {
                             /** @enum {string|null} */
                             diet?: null | "vegetarian" | "vegan" | "halal" | "kosher" | "gluten_free" | "other";
                             dietNote?: string | null;
+                            childNeeds?: string | null;
+                            accessibilityNeeds?: string | null;
                             /** @enum {string|null} */
                             transfer?: null | "need" | "own";
                             members: components["schemas"]["GuestPersonRsvp"][];
@@ -4341,6 +4344,7 @@ export interface paths {
          * RSVP одной или нескольких персон семейного приглашения
          * @description Ответ относится только к основной программе, не ко всем мероприятиям из events[].
          *     Новый клиент передаёт members[] и меняет только перечисленных людей.
+         *     Личные заметки о питании, ребёнке и доступности читают эта семья и пара. Для dietNote, childNeeds и accessibilityNeeds пропуск сохраняет значение, null очищает его.
          *     Старый payload status/plusOne остаётся переходно совместимым:
          *     plusOne материализуется как реальная placeholder-персона, а не
          *     увеличивает скрытый счётчик. Отказ одной персоны освобождает только
@@ -4393,6 +4397,8 @@ export interface paths {
                         /** @enum {string|null} */
                         diet?: null | "vegetarian" | "vegan" | "halal" | "kosher" | "gluten_free" | "other";
                         dietNote?: string | null;
+                        childNeeds?: string | null;
+                        accessibilityNeeds?: string | null;
                         /** @enum {string|null} */
                         transfer?: null | "need" | "own";
                         members?: {
@@ -4403,6 +4409,8 @@ export interface paths {
                             /** @enum {string|null} */
                             diet?: null | "vegetarian" | "vegan" | "halal" | "kosher" | "gluten_free" | "other";
                             dietNote?: string | null;
+                            childNeeds?: string | null;
+                            accessibilityNeeds?: string | null;
                             /** @enum {string|null} */
                             transfer?: null | "need" | "own";
                         }[];
@@ -21631,8 +21639,12 @@ export interface components {
              * @enum {string|null}
              */
             diet?: null | "vegetarian" | "vegan" | "halal" | "kosher" | "gluten_free" | "other";
-            /** @description аллергии словами, когда enum не хватает */
+            /** @description Аллергии и другие личные пожелания о питании. Поле видит только пара. */
             dietNote?: string | null;
+            /** @description Что нужно подготовить для ребёнка. Поле видит только пара. */
+            childNeeds?: string | null;
+            /** @description Какие условия доступности нужны гостю. Поле видит только пара. */
+            accessibilityNeeds?: string | null;
             /** @description выбор в опросе меню */
             menuOptionId?: string | null;
             /**
@@ -21657,6 +21669,8 @@ export interface components {
             /** @enum {string|null} */
             diet?: null | "vegetarian" | "vegan" | "halal" | "kosher" | "gluten_free" | "other";
             dietNote?: string | null;
+            childNeeds?: string | null;
+            accessibilityNeeds?: string | null;
             /** @enum {string|null} */
             transfer?: null | "need" | "own";
             readonly isPlaceholder?: boolean;

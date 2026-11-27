@@ -3439,7 +3439,23 @@ export const CONTRACT_SCHEMAS = {
                       "string",
                       "null"
                   ],
-                  "description": "аллергии словами, когда enum не хватает"
+                  "description": "Аллергии и другие личные пожелания о питании. Поле видит только пара."
+              },
+              "childNeeds": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "maxLength": 300,
+                  "description": "Что нужно подготовить для ребёнка. Поле видит только пара."
+              },
+              "accessibilityNeeds": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "maxLength": 300,
+                  "description": "Какие условия доступности нужны гостю. Поле видит только пара."
               },
               "menuOptionId": {
                   "type": [
@@ -3640,6 +3656,20 @@ export const CONTRACT_SCHEMAS = {
                       "string",
                       "null"
                   ]
+              },
+              "childNeeds": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "maxLength": 300
+              },
+              "accessibilityNeeds": {
+                  "type": [
+                      "string",
+                      "null"
+                  ],
+                  "maxLength": 300
               },
               "transfer": {
                   "type": [

@@ -97,6 +97,8 @@ const SERVICE_PLAN_MIGRATION = '1765600000000_service_plan_prices'
 
 const SERVICE_PLAN_MANUAL_LATEST = 1765610000000
 const SERVICE_PLAN_MANUAL_MIGRATION = '1765610000000_service_plan_manual_orders'
+const GUEST_NOTES_LATEST = 1765620000000
+const GUEST_NOTES_MIGRATION = '1765620000000_guest_accommodation_notes'
 
 async function runServicePlanManualCycle(fixture) {
   const before = await snapshot()
@@ -109,7 +111,7 @@ async function runServicePlanManualCycle(fixture) {
       : after.data[table]
     assert.deepEqual(actual, rows, 'Manual service plans changed prior data in ' + table)
   }
-  await assertJournal(manifest.map(row => row.name))
+  await assertJournal(expectedOwn.filter(name => Number(name.slice(0, 13)) <= SERVICE_PLAN_MANUAL_LATEST))
   await migrate('up', SERVICE_PLAN_MANUAL_LATEST)
   assert.deepEqual(await snapshot(), after)
   await migrate('down', SERVICE_PLAN_MANUAL_MIGRATION, undefined, true)
@@ -128,6 +130,38 @@ async function runServicePlanManualCycle(fixture) {
   const down = await migrate('down', SERVICE_PLAN_MANUAL_MIGRATION, 'service_plan_manual_orders_preserve', true)
   assert(/code:\s*['"]23514['"]/.test(down.output))
   assert.deepEqual(await snapshot(), reported)
+}
+
+async function runGuestNotesCycle(guestId) {
+  const before = await snapshot()
+  await migrate('up', GUEST_NOTES_LATEST)
+  const after = await snapshot()
+  assert(after.data.guests.some(guest => guest.id === guestId))
+  assert(after.data.guests.every(guest => guest.child_needs === null && guest.accessibility_needs === null))
+  for (const [table, rows] of Object.entries(before.data)) {
+    const actual = table === 'guests'
+      ? after.data.guests.map(({ child_needs: _child, accessibility_needs: _access, ...guest }) => guest)
+      : table === 'pgmigrations'
+        ? after.data.pgmigrations.filter(row => row.name !== GUEST_NOTES_MIGRATION)
+        : after.data[table]
+    assert.deepEqual(actual, rows, 'Guest notes changed prior data in ' + table)
+  }
+  await assertJournal(expectedOwn)
+  await migrate('up', GUEST_NOTES_LATEST)
+  assert.deepEqual(await snapshot(), after)
+  await migrate('down', GUEST_NOTES_MIGRATION, undefined, true)
+  assert.deepEqual(await snapshot(), before)
+  await migrate('up', GUEST_NOTES_LATEST)
+  for (const notes of [
+    ['Синтетический детский стульчик', null],
+    [null, 'Синтетический вход без ступеней'],
+  ]) {
+    await write('update guests set child_needs=$2, accessibility_needs=$3 where id=$1', [guestId, ...notes])
+    const populated = await snapshot()
+    const down = await migrate('down', GUEST_NOTES_MIGRATION, 'guest_accommodation_notes_preserve', true)
+    assert(/code:\s*['"]23514['"]/.test(down.output))
+    assert.deepEqual(await snapshot(), populated)
+  }
 }
 
 async function runServicePlanPriceCycle(checkPublishedGuard) {
@@ -251,6 +285,7 @@ const expectedOwn = [
   WEDDING_DATE_TASK_MIGRATION,
   SERVICE_PLAN_MIGRATION,
   SERVICE_PLAN_MANUAL_MIGRATION,
+  GUEST_NOTES_MIGRATION,
 ]
 function validateUrl(raw) {
   assert(raw, 'Both explicit database URLs are required')
@@ -799,6 +834,7 @@ const APPROVED_MIGRATION_INPUTS = [
   {"name":"1765190000000_complete_wedding_date_task.cjs","kind":"migration","sha256":"c9b99ddc88307b31b7b98f9d9a1d55f96f3fc93adfe3e28c723723d0fdaccdbc"},
   {"name":"1765600000000_service_plan_prices.cjs","kind":"migration","sha256":"4954f6b3e034effc86a0501bef982796042172688123cae0a406c2b5a097abbb"},
   {"name":"1765610000000_service_plan_manual_orders.cjs","kind":"migration","sha256":"870f222dcb889edfb16d929bba425b551dfab011a5676acfc30ec3762155f1ff"},
+  {"name":"1765620000000_guest_accommodation_notes.cjs","kind":"migration","sha256":"a8da1d24ceca8369a1cf0ab0a8fae3212abbf414fbcdd64048000d4ce3e37375"},
   {
     "name": "data/categories.json",
     "kind": "data",
@@ -811,12 +847,12 @@ const APPROVED_MIGRATION_INPUTS = [
   }
 ]
 function assertMigrationInventory(entries, approved) {
-  assert.deepEqual(entries, approved, 'Migration directory must have the exact reviewed 137 regular CJS files and data/ with exactly two pinned regular JSON inputs')
-  assert.equal(entries.filter(row => row.kind === 'migration').length, 137)
+  assert.deepEqual(entries, approved, 'Migration directory must have the exact reviewed 138 regular CJS files and data/ with exactly two pinned regular JSON inputs')
+  assert.equal(entries.filter(row => row.kind === 'migration').length, 138)
   assert.equal(entries.filter(row => row.kind === 'data').length, 2)
   const files = entries.filter(row => row.kind === 'migration')
-  assert.equal(files.at(-1).name, `${SERVICE_PLAN_MANUAL_MIGRATION}.cjs`)
-  assert(files.every(row => /^\d{13}_.+\.cjs$/.test(row.name) && Number(row.name.slice(0, 13)) <= SERVICE_PLAN_MANUAL_LATEST))
+  assert.equal(files.at(-1).name, `${GUEST_NOTES_MIGRATION}.cjs`)
+  assert(files.every(row => /^\d{13}_.+\.cjs$/.test(row.name) && Number(row.name.slice(0, 13)) <= GUEST_NOTES_LATEST))
 }
 function migrationManifest() {
   assert(lstatSync(migrationsDir).isDirectory() && !lstatSync(migrationsDir).isSymbolicLink())
@@ -3776,6 +3812,7 @@ try {
   assert.deepEqual(await dateTasks(), completedDateTasks)
   await runServicePlanPriceCycle(true)
   await runServicePlanManualCycle(f)
+  await runGuestNotesCycle(f.guestYes)
   // Current application erasure requires the complete schema.
   await eraseCurrentVendorFixture()
   assert.equal((await db.query(`${totalSql} and deal_id=$1`, [f.deal])).rows[0].paid, '24000000', 'Original 20m + 7m - 3m remains intact after the additional erasure fixture')
@@ -3788,7 +3825,7 @@ try {
   console.log(`Resource-plan checks passed: ${planNegativeCount} actual SQL refusals including deferred orphan COMMIT; immutable bytes, safe projection, scoped heads/schema2 terms, no inferred/reserved capacity and rollback-contained whole-wedding cascade`)
   console.log(`Resource-commitment checks passed: ${commitmentNegativeCount} actual SQL refusals; distinct synthetic historical proof, immutable origin/replacement/member/allocation facts, inherited baseline/shared whole-window counters, one-way matching release, foreign conflict and rollback-contained complete wedding cascade; no real human or public booking acceptance claim`)
   console.log(`Guarded-down checks passed: ${atomicDownCount} actual CLI failures with exact guard messages and complete row/journal/schema preservation`)
-  console.log(`Verified ${expectedOwn.length} own migrations through ${SERVICE_PLAN_MANUAL_LATEST}; all actual clean/upgrade/repeat/empty-down/guarded-down checks passed`)
+  console.log(`Verified ${expectedOwn.length} own migrations through ${GUEST_NOTES_LATEST}; all actual clean/upgrade/repeat/empty-down/guarded-down checks passed`)
   console.log(`Evidence source SHA-256: ${createHash('sha256').update(readFileSync(fileURLToPath(import.meta.url))).digest('hex')}; migration manifest SHA-256: ${createHash('sha256').update(JSON.stringify(manifest)).digest('hex')}`)
   console.log('Snapshot covers public rows/journal and relation/column/type/constraint/index/trigger/function/sequence-definition metadata, extension ownership/members/operator classes/families/operators, ACLs and comments; runtime sequence counters are nontransactional and excluded')
   console.log('ECOSYSTEM_MIGRATION_DRILL_PASSED')

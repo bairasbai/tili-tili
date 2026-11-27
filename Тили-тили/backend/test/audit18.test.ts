@@ -119,7 +119,7 @@ describe.skipIf(!live)('блок 5: RSVP гостя целиком и телеф
 
     await app.inject({ method: 'POST', url, payload: { status: 'yes', diet: 'other', dietNote: 'орехи' } })
     /* Раньше `coalesce($5, diet)` читал присланный null как «не трогать». */
-    const again = await app.inject({ method: 'POST', url, payload: { status: 'yes', diet: null } })
+    const again = await app.inject({ method: 'POST', url, payload: { status: 'yes', diet: null, dietNote: null } })
     expect(again.statusCode).toBe(200)
 
     const page = (await app.inject({ method: 'GET', url })).json() as Record<string, unknown>

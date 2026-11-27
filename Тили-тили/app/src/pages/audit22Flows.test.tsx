@@ -388,11 +388,14 @@ describe('audit22 real page output and HTTP mutations (FE04–12)', () => {
   })
 
   it('FE12 guest CSV quotes semicolons, quotes and newlines as one cell and one record', async () => {
-    people = [{ id: 'g1', name: 'Анна; "Аня"\nИванова', status: 'yes', partySize: 1 }]
+    localStorage.setItem('tt_wedding_id', JSON.stringify(W))
+    people = [{ id: 'g1', name: 'Анна; "Аня"\nИванова', status: 'yes', partySize: 1,
+      dietNote: 'Личное питание', childNeeds: 'Личный детский стульчик', accessibilityNeeds: 'Личный доступ' }]
     mount(<Guests />); await screen.findByText('Анна; "Аня" Иванова')
     fireEvent.click(screen.getByRole('button', { name: 'Список CSV' }))
     expect(blobs).toHaveLength(1)
     const text = await new Promise<string>((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(String(r.result)); r.onerror = reject; r.readAsText(blobs[0]!) })
     expect(text).toContain('"Анна; ""Аня""\nИванова";Придёт;нет')
+    expect(text).not.toContain('Личн')
   })
 })

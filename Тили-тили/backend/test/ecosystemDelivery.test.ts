@@ -90,7 +90,7 @@ async function prepareDeliveryDatabase(): Promise<string> {
   const dir = join(root, run); mkdirSync(dir); isolation = { run, dir, name, url: url.toString(), parent: null, own: null, createdOID: null }
   const migrationsDir = join(backend, 'migrations'), cli = join(backend, 'node_modules', 'node-pg-migrate', 'bin', 'node-pg-migrate.js')
   const migrationNames = readdirSync(migrationsDir).filter(n => /^[0-9]{13}_[a-z0-9_]+\.cjs$/.test(n)).sort().map(n => n.slice(0, -4))
-  assert.equal(migrationNames.length, 137); assert.equal(migrationNames.at(-1), '1765610000000_service_plan_manual_orders')
+  assert.equal(migrationNames.length, 138); assert.equal(migrationNames.at(-1), '1765620000000_guest_accommodation_notes')
   const sources = [fileURLToPath(import.meta.url), cli, ...readdirSync(migrationsDir).filter(n => /\.(cjs|sql)$/.test(n)).sort().map(n => join(migrationsDir, n))]
   const sourcePins = sources.map(file => { const bytes = readFileSync(file); return { file, bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex').toUpperCase() } })
   assert.equal(sourcePins.find(pin => pin.file === join(migrationsDir, '1765190000000_complete_wedding_date_task.cjs'))!.sha256, 'C9B99DDC88307B31B7B98F9D9A1D55F96F3FC93ADFE3E28C723723D0FDACCDBC')
