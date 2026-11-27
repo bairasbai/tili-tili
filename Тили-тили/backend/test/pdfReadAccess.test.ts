@@ -16,7 +16,15 @@ describe.skipIf(!DB)('PDF final reads: access is fresh after actual database wai
   afterAll(async () => { await app?.close() })
   async function setup() {
     const userId = randomUUID(), sessionId = randomUUID(), weddingId = randomUUID(), consentId = randomUUID()
-    await app.db!.query('insert into users(id,phone,name) values($1,$2,$3)', [userId, '+79' + randomInt(100000000,999999999), 'Synthetic PDF owner'])
+    let ownerCreated = false
+    for (let attempt = 0; attempt < 8 && !ownerCreated; attempt++) {
+      const result = await app.db!.query(
+        'insert into users(id,phone,name) values($1,$2,$3) on conflict (phone) do nothing',
+        [userId, '+79' + randomInt(100000000, 999999999), 'Synthetic PDF owner'],
+      )
+      ownerCreated = result.rowCount === 1
+    }
+    if (!ownerCreated) throw new Error('Could not allocate a unique phone for the synthetic PDF owner')
     await app.db!.query('insert into sessions(id,user_id,refresh_hash) values($1,$2,$3)', [sessionId,userId,randomUUID()])
     await app.db!.query('insert into consents(id,user_id,policy_version,adult) values($1,$2,$3,true)', [consentId,userId,POLICY])
     await app.db!.query("insert into weddings(id,owner_id,title,date,tz,invite_code) values($1,$2,'Synthetic PDF','2027-06-14','Europe/Moscow',$3)", [weddingId,userId,randomUUID()])
