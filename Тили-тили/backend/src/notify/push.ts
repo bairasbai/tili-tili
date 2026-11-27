@@ -31,10 +31,8 @@ interface Claim {
   lease_token: string
 }
 interface Ready {
-  title: string
-  body: string
-  link: string | null
   task_id: string | null
+  plan_b: boolean
   endpoint: string
   keys: { p256dh: string; auth: string }
   ttl: number
@@ -207,7 +205,10 @@ export async function sendDuePushes(db: Db, config: Config, limit = 200): Promis
       else await finish(status, status==='expired' ? 'push_window_expired' : 'no_longer_eligible', 0, db, true)
     }
     // Current cancellation, expiration, owner and subscription, not stale snapshot.
-    const ready = async () => (await db.query<Ready>(`select n.title,n.body,n.link,n.task_id,s.endpoint,s.keys,
+    const ready = async () => (await db.query<Ready>(`select n.task_id,s.endpoint,s.keys,
+        exists (select 1 from broadcasts b join weddings w on w.id=b.wedding_id
+          where b.id=n.broadcast_id and b.planb_current and b.action like 'planb:%'
+            and w.archived_at is null and w.cancelled_at is null) as plan_b,
         greatest(1,floor(extract(epoch from (least(n.deliver_after+($4 || ' milliseconds')::interval,
           coalesce(n.expires_at,n.deliver_after+($4 || ' milliseconds')::interval))-now()))))::int as ttl
       from notifications n join notification_push_deliveries d on d.notification_id=n.id
@@ -256,9 +257,12 @@ export async function sendDuePushes(db: Db, config: Config, limit = 200): Promis
       deadline.unref()
     })
     try {
+      // A push can be shown before unlock. Only the authorized inbox contains the original copy and route.
+      const message = item.plan_b
+        ? { title: 'Активирован план Б', body: 'Сценарий включён — проверьте точку сбора и тайминг' }
+        : { title: 'Тили-тили', body: 'Откройте приложение, чтобы прочитать уведомление' }
       await Promise.race([webpush.sendNotification({ endpoint: item.endpoint, keys: item.keys },
-        JSON.stringify({ title: item.title, body: item.body,
-          data: { link: item.link, notificationId: claim.notification_id } }),
+        JSON.stringify({ ...message, data: { link: '/notifications', notificationId: claim.notification_id } }),
         { timeout: requestTimeout, TTL: item.ttl, agent, vapidDetails: channel.vapid }), timeout])
       accepted = true
     } catch (error) { failure = error }

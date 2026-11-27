@@ -539,8 +539,8 @@ describe.skipIf(!live)('блок 2: транзакции, гонки, рассы
         vapidSubject: 'mailto:test@example.com',
       })
       // До фикса трёхдневная строка уходила в рассылку наравне со свежей.
-      const titles = sent.mock.calls.map(([, payload]) => (JSON.parse(String(payload)) as { title: string }).title)
-      expect(titles).not.toContain(marker)
+      const ids = sent.mock.calls.map(([, payload]) => (JSON.parse(String(payload)) as { data: { notificationId: string } }).data.notificationId)
+      expect(ids).not.toContain(old)
     } finally {
       sent.mockRestore()
     }
