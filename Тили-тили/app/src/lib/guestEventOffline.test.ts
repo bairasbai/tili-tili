@@ -273,6 +273,20 @@ describe('real selected programme wrapper fences', () => {
     }
   }
 
+  it('keeps the accepted programme when an older request for the same selection returns 404', async () => {
+    const respond = await pendingScoped404()
+    const confirmed = { ...data(), timeline: [{ ...data().timeline[0], name: 'Programme accepted by the newer read' }] }
+    vi.stubGlobal('fetch', vi.fn(async () => response(confirmed)))
+    await getGuestEventDaySnapshot(TOKEN, selector)
+    const accepted = await recallGuestEvent(ticket())
+    expect(accepted?.timeline[0]?.name).toBe('Programme accepted by the newer read')
+
+    await respond()
+
+    expect(guestEventRefusal(TOKEN, selector)).toBeNull()
+    expect(await recallGuestEvent(ticket())).toEqual(accepted)
+  })
+
   it.each([true, false])('removes the refused programme after a different cross-tab removal (WebCrypto available: %s)', async cryptoAvailable => {
     const a = await saved()
     await saved(other)

@@ -17,6 +17,8 @@ const lastEventRemoval = new Map<string, number>()
 let selectedEvent: string | null = null
 const eventEpochs = new Map<string, number>()
 const eventRefusals = new Map<string, ApiError>()
+let nextEventRead = 0
+const acceptedEventReads = new Map<string, number>()
 // Explicit retry may clear the visible error, but a denied old copy stays blocked until a new validated copy replaces it.
 const eventCacheRefusals = new Set<string>()
 
@@ -62,6 +64,16 @@ export function acceptGuestEventRead(ticket: GuestEventReadTicket): void {
   if (guestEventIsCurrent(ticket)) clearGuestEventRefusal(ticket.token, ticket.selector)
 }
 
+/** A newer accepted read supersedes responses for this exact token, event and person. */
+export function trackGuestEventRead(ticket: GuestEventReadTicket) {
+  const scope = eventScope(ticket.token, ticket.selector)
+  const order = ++nextEventRead
+  return {
+    hasNewerAcceptance: () => (acceptedEventReads.get(scope) ?? 0) > order,
+    markAccepted: () => acceptedEventReads.set(scope, order),
+  }
+}
+
 export interface GuestDayCopy {
   schema: 1
   /** An untrusted WebCrypto namespace, never guest identity or access proof. */
@@ -99,6 +111,7 @@ export function forgetGuestDay(): void {
   eventRefusals.clear()
   eventCacheRefusals.clear()
   eventEpochs.clear()
+  acceptedEventReads.clear()
   invalidateEventStore()
   try { localStorage.removeItem(GUEST_DAY_OFFLINE_KEY) } catch { /* disabled storage */ }
   try { localStorage.removeItem(GUEST_EVENT_OFFLINE_KEY) } catch { /* disabled storage */ }

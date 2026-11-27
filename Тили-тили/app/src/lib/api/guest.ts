@@ -1,7 +1,7 @@
 import { api, ApiError, newIdempotencyKey, url } from './client'
 import { safeGet, safeSet } from '../usePersist'
 import { acceptGuestDayRead, guestDayGeneration, guestDayIsCurrent, guestDayTokenChanged, refuseGuestDay, rememberGuestDay,
-  acceptGuestEventRead, guestEventIsCurrent, guestEventNamespace, guestEventReadTicket, refuseGuestEvent, rememberGuestEvent,
+  acceptGuestEventRead, guestEventIsCurrent, guestEventNamespace, guestEventReadTicket, refuseGuestEvent, rememberGuestEvent, trackGuestEventRead,
   type GuestEventSelector, type GuestEventReadTicket } from '../guestDayOffline'
 
 /*
@@ -183,8 +183,9 @@ export async function getGuestEventDaySnapshot(token: string, selector: GuestEve
   ticket: GuestEventReadTicket = guestEventReadTicket(token, selector), currentRead?: () => boolean) {
   selector = { eventId: selector.eventId.toLowerCase(), guestId: selector.guestId.toLowerCase() }
   const active = guestToken() === token
+  const readOrder = active ? trackGuestEventRead(ticket) : null
   const assertCurrent = () => {
-    if ((active && !guestEventIsCurrent(ticket)) || currentRead?.() === false)
+    if ((active && !guestEventIsCurrent(ticket)) || readOrder?.hasNewerAcceptance() || currentRead?.() === false)
       throw new ApiError('http', 410, 'guest_selection_changed', 'Выбранная программа изменилась')
   }
   if (ticket.token !== token || ticket.selector.eventId !== selector.eventId || ticket.selector.guestId !== selector.guestId)
@@ -200,7 +201,7 @@ export async function getGuestEventDaySnapshot(token: string, selector: GuestEve
     { auth: false, assertCurrent: () => assertGuestReadCurrent(token, ticket.generation, active) }).catch((error: unknown) => {
     if (error instanceof ApiError && active) {
       if ([401, 410].includes(error.status)) refuseGuestCopy(token, ticket.generation, error)
-      else if ([403, 404].includes(error.status)) refuseGuestEvent(ticket, error, namespace)
+      else if ([403, 404].includes(error.status) && !readOrder?.hasNewerAcceptance()) refuseGuestEvent(ticket, error, namespace)
     }
     throw error
   })
@@ -210,6 +211,7 @@ export async function getGuestEventDaySnapshot(token: string, selector: GuestEve
     || !Array.isArray(snapshot.data.timeline) || snapshot.data.timeline.some(block => Object.hasOwn(block, 'eventId') || block.forGuests !== true))
     throw new ApiError('http', 502, 'guest_programme_mismatch', 'Не удалось проверить выбранную программу')
   if (active) {
+    readOrder?.markAccepted()
     acceptGuestEventRead(ticket)
     await rememberGuestEvent(ticket, snapshot.data, snapshot.etag, currentRead, namespace)
     assertCurrent()
