@@ -247,6 +247,7 @@ describe.skipIf(!DATABASE)('durable subscription delivery (real PostgreSQL, mock
   let db: Db
   const users: string[] = []
   const send = () => vi.mocked(webpush.sendNotification)
+  const isDeliveryRead = (sql: string) => sql.includes('as ttl')
   const ownCalls = (id: string) => send().mock.calls.filter(([, payload]) =>
     JSON.parse(String(payload)).data.notificationId === id)
 
@@ -312,10 +313,37 @@ describe.skipIf(!DATABASE)('durable subscription delivery (real PostgreSQL, mock
   function onFirstRead(id: string, action: () => Promise<unknown>): Db {
     let acted = false
     return { ...db, async query<T extends pg.QueryResultRow>(sql: string, values?: readonly unknown[]) {
-      if (!acted && sql.includes('select n.title,n.body') && values?.[0]===id) { acted = true; await action() }
+      if (!acted && isDeliveryRead(sql) && values?.[0]===id) { acted = true; await action() }
       return db.query<T>(sql, values)
     } }
   }
+
+  it('keeps text and routes of previously queued notices out of the provider payload', async () => {
+    const f = await fixture()
+    await db.query("update notifications set kind='chat',title='Личное сообщение от Анны',body='Номер комнаты 204',link='/chat/private' where id=$1", [f.id])
+    await sendDuePushes(db, config)
+    expect(ownCalls(f.id)).toHaveLength(1)
+    expect(JSON.parse(String(ownCalls(f.id)[0]![1]))).toEqual({
+      title: 'Тили-тили', body: 'Откройте приложение, чтобы прочитать уведомление',
+      data: { link: '/notifications', notificationId: f.id },
+    })
+  })
+
+  it.each(['replaced', 'archived', 'cancelled'])('sends a neutral alert for a %s Plan B', async state => {
+    const f = await fixture(), wedding = randomUUID(), broadcast = randomUUID()
+    await db.query(`insert into weddings(id,owner_id,title,invite_code,archived_at,cancelled_at)
+      values($1,$2,'Delivery incident',$3,case when $4='archived' then now() end,case when $4='cancelled' then now() end)`,
+    [wedding, f.user, randomUUID(), state])
+    await db.query("insert into broadcasts(id,wedding_id,action,planb_current) values($1,$2,'planb:rain',$3)",
+      [broadcast, wedding, state !== 'replaced'])
+    await db.query("update notifications set broadcast_id=$2,title='Активирован план Б' where id=$1", [f.id, broadcast])
+    await sendDuePushes(db, config)
+    expect(ownCalls(f.id)).toHaveLength(1)
+    expect(JSON.parse(String(ownCalls(f.id)[0]![1]))).toEqual({
+      title: 'Тили-тили', body: 'Откройте приложение, чтобы прочитать уведомление',
+      data: { link: '/notifications', notificationId: f.id },
+    })
+  })
 
   it('T006: capability exposes only a verified public key, rejects a changed key and preserves retries through refusal', async () => {
     // This worker processes the entire queue. Use the owned database so unrelated due rows cannot fill its batch.
@@ -411,8 +439,10 @@ describe.skipIf(!DATABASE)('durable subscription delivery (real PostgreSQL, mock
     expect((await rows(f.id)).every(r => r.attempts===1 && r.provider_accepted_at && !r.lease_token && !r.lease_until)).toBe(true)
     expect((await settled(f.id)).pushed_at).not.toBeNull()
     const call = ownCalls(f.id)[0]!
-    expect(JSON.parse(String(call[1]))).toEqual({ title: 'Wedding update', body: 'Only this notice',
-      data: { link: '/wedding/dayx', notificationId: f.id } })
+    expect(JSON.parse(String(call[1]))).toEqual({
+      title: 'Тили-тили', body: 'Откройте приложение, чтобы прочитать уведомление',
+      data: { link: '/notifications', notificationId: f.id },
+    })
     expect(call[2]?.timeout).toBe(PUSH_TIMEOUT_MS)
     expect(PUSH_TIMEOUT_MS).toBeLessThan(PUSH_LEASE_MS)
     expect(call[2]?.TTL).toBeGreaterThan(0)
@@ -736,7 +766,7 @@ describe.skipIf(!DATABASE)('durable subscription delivery (real PostgreSQL, mock
       await db.query(`insert into broadcasts(id,wedding_id,action,planb_current,planb_urgent_event_id,planb_urgent_event_version)
         select $1,$2,'planb:rain',true,e.id,${PLAN_B_EVENT_VERSION_SQL}
           from wedding_events e where e.wedding_id=$2 and e.is_main`, [broadcast, wedding])
-      await db.query("update notifications set broadcast_id=$2,title='Активирован план Б',body='Проверьте план в приложении',link='/dayx' where id=$1",
+      await db.query("update notifications set broadcast_id=$2,title='План Б Анны',body='Новый адрес: Частная 1',link='/dayx?private=1' where id=$1",
         [f.id, broadcast])
       return f
     }
@@ -745,7 +775,8 @@ describe.skipIf(!DATABASE)('durable subscription delivery (real PostgreSQL, mock
       db.query('update notification_prefs set urgent_incidents=false where user_id=$1', [revoked.user])), config)
     expect(ownCalls(allowed.id)).toHaveLength(1)
     expect(JSON.parse(String(ownCalls(allowed.id)[0]![1]))).toEqual({
-      title: 'Активирован план Б', body: 'Проверьте план в приложении', data: { link: '/dayx', notificationId: allowed.id },
+      title: 'Активирован план Б', body: 'Сценарий включён — проверьте точку сбора и тайминг',
+      data: { link: '/notifications', notificationId: allowed.id },
     })
     expect((await rows(allowed.id))[0]).toMatchObject({ status: 'provider_accepted', attempts: 1 })
     expect(ownCalls(revoked.id)).toHaveLength(0)
@@ -773,7 +804,7 @@ describe.skipIf(!DATABASE)('durable subscription delivery (real PostgreSQL, mock
 
   it('pre-send database failure leaves the claim recoverable without a provider call', async () => {
     const f = await fixture()
-    const faulty = failQueryOnce((sql, values) => sql.includes('select n.title,n.body') && values?.[0]===f.id)
+    const faulty = failQueryOnce((sql, values) => isDeliveryRead(sql) && values?.[0]===f.id)
     await expect(sendDuePushes(faulty, config)).rejects.toThrow('controlled database failure')
     expect(ownCalls(f.id)).toHaveLength(0)
     expect((await rows(f.id))[0]?.status).toBe('claimed')

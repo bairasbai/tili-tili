@@ -258,18 +258,29 @@ describe.skipIf(!DB)('017-B: task reminders, delivery guards and transactional a
     const history=await app.db!.query('select id from notifications where user_id=$1 and cancelled_at is not null',[w.helper.id])
     expect(history.rows).toHaveLength(3)
   })
-  it('the real delivery path hands one valid notice to a mocked push provider once',async()=>{
+  it('sends one private lock-screen alert and keeps task details in the authorized inbox',async()=>{
     const w=await setup()
     await app.db!.query("update users set tz='UTC' where id=$1",[w.helper.id])
     await app.db!.query("update notification_prefs set quiet_from='00:00',quiet_to='00:00' where user_id=$1",[w.helper.id])
-    const id=await make(w,{assigneeId:w.helper.id})
+    const taskTitle = 'Встретить Анну у частного входа'
+    const id=await make(w,{assigneeId:w.helper.id,title:taskTitle})
+    const notice = (await notices(id))[0]!
     await app.db!.query("insert into push_subscriptions(id,user_id,endpoint,keys) values($1,$2,$3,$4)",
       [randomUUID(),w.helper.id,'https://push.example/'+randomUUID(),JSON.stringify({p256dh:'test',auth:'test'})])
     const send=vi.spyOn(webpush,'sendNotification').mockResolvedValue({statusCode:201,body:'',headers:{}})
     const keys=webpush.generateVAPIDKeys();const config={...app.appConfig,vapidPublicKey:keys.publicKey,vapidPrivateKey:keys.privateKey}
     await sendDuePushes(app.db!,config);await sendDuePushes(app.db!,config)
     expect(send).toHaveBeenCalledTimes(1)
-    expect(JSON.parse(String(send.mock.calls[0]![1])).data.link).toContain(id)
+    expect(JSON.parse(String(send.mock.calls[0]![1]))).toEqual({
+      title: 'Тили-тили', body: 'Откройте приложение, чтобы прочитать уведомление',
+      data: { link: '/notifications', notificationId: notice.id },
+    })
+    const inbox = await app.inject({ method: 'GET', url: '/notifications', headers: headers(w.helper) })
+    expect(inbox.statusCode, inbox.body).toBe(200)
+    expect(inbox.json()).toEqual(expect.arrayContaining([expect.objectContaining({
+      id: notice.id, title: 'Вам назначена задача', body: taskTitle,
+      link: `/wedding/checklist?task=${id}&wedding=${w.id}`,
+    })]))
     await patch(w,id,{done:true});await sendDuePushes(app.db!,config)
     expect(send).toHaveBeenCalledTimes(1)
   })
