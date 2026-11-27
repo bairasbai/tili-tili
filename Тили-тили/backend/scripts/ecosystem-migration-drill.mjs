@@ -111,7 +111,7 @@ async function runServicePlanManualCycle(fixture) {
       : after.data[table]
     assert.deepEqual(actual, rows, 'Manual service plans changed prior data in ' + table)
   }
-  await assertJournal(expectedOwn.filter(name => Number(name.slice(0, 13)) <= SERVICE_PLAN_MANUAL_LATEST))
+  await assertJournal(manifest.filter(row => Number(row.name.slice(0, 13)) <= SERVICE_PLAN_MANUAL_LATEST).map(row => row.name))
   await migrate('up', SERVICE_PLAN_MANUAL_LATEST)
   assert.deepEqual(await snapshot(), after)
   await migrate('down', SERVICE_PLAN_MANUAL_MIGRATION, undefined, true)
@@ -146,7 +146,7 @@ async function runGuestNotesCycle(guestId) {
         : after.data[table]
     assert.deepEqual(actual, rows, 'Guest notes changed prior data in ' + table)
   }
-  await assertJournal(expectedOwn)
+  await assertJournal(manifest.map(row => row.name))
   await migrate('up', GUEST_NOTES_LATEST)
   assert.deepEqual(await snapshot(), after)
   await migrate('down', GUEST_NOTES_MIGRATION, undefined, true)
