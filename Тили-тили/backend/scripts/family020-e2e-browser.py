@@ -139,9 +139,9 @@ localStorage.setItem('tt_wedding_date', JSON.stringify({json.dumps(fixture['date
     assert sum(1 for g in family_after_link if g.get("inviteUrl")) == 1
     result["steps"].append("one-family-invite-link-issued")
 
-    for lang, invite, attending, decline, other, dietary in (
-        ("ru", "Открыть приглашение", "Приду", "Не смогу", "Другое", "Ограничения по еде"),
-        ("en", "Open the invitation", "Attending", "Can’t make it", "Other", "Dietary restrictions"),
+    for lang, invite, attending, decline, other, dietary, child, access in (
+        ("ru", "Открыть приглашение", "Приду", "Не смогу", "Другое", "Ограничения по еде", "Потребности ребёнка", "Условия доступности"),
+        ("en", "Open the invitation", "Attending", "Can’t make it", "Other", "Dietary restrictions", "Child’s needs", "Accessibility needs"),
     ):
         with browser.new_context() as keyboard:
             keyboard.add_init_script(f"localStorage.setItem('tt_lang', {json.dumps(lang)});")
@@ -166,6 +166,10 @@ localStorage.setItem('tt_wedding_date', JSON.stringify({json.dumps(fixture['date
                 note = first.get_by_role("textbox", name=dietary, exact=True)
                 keyboard_page.keyboard.press("Tab")
                 expect(note).to_be_focused()
+                keyboard_page.keyboard.press("Tab")
+                expect(first.get_by_role("textbox", name=child, exact=True)).to_be_focused()
+                keyboard_page.keyboard.press("Tab")
+                expect(first.get_by_role("textbox", name=access, exact=True)).to_be_focused()
                 assert keyboard_page.evaluate("document.documentElement.scrollWidth <= innerWidth + 1"), f"overflow at {width}px ({lang})"
             result["steps"].append(f"family-keyboard-{lang}")
 
@@ -182,9 +186,17 @@ localStorage.setItem('tt_wedding_date', JSON.stringify({json.dumps(fixture['date
     first.get_by_role("button", name="Приду", exact=True).click()
     first.get_by_role("button", name="Без ограничений", exact=True).click()
     first.get_by_role("button", name="Нужен трансфер", exact=True).click()
+    first.get_by_role("textbox", name="Условия доступности", exact=True).fill("Вход без ступеней E2E")
     second.get_by_role("button", name="Приду", exact=True).click()
     second.get_by_role("button", name="Вегетарианское", exact=True).click()
     second.get_by_role("button", name="Нужен трансфер", exact=True).click()
+    second.get_by_role("textbox", name="Ограничения по еде", exact=True).fill("Без орехов E2E")
+    second.get_by_role("textbox", name="Потребности ребёнка", exact=True).fill("Детский стульчик E2E")
+    with guest_page.expect_response(lambda response: "/rsvp/" in response.url
+                                    and not response.url.endswith("/events") and response.request.method == "GET"):
+        guest_page.evaluate("window.dispatchEvent(new Event('focus'))")
+    expect(first.get_by_role("textbox", name="Условия доступности", exact=True)).to_have_value("Вход без ступеней E2E")
+    expect(second.get_by_role("textbox", name="Потребности ребёнка", exact=True)).to_have_value("Детский стульчик E2E")
     guest_page.get_by_role("button", name="Сохранить ответы семьи", exact=True).click()
     expect(guest_page.get_by_text("Что будете есть E2E?", exact=True)).to_be_visible(timeout=15_000)
     guest_page.screenshot(path=str(OUT / "02-family-rsvp.png"), full_page=True)
@@ -198,6 +210,19 @@ localStorage.setItem('tt_wedding_date', JSON.stringify({json.dumps(fixture['date
     assert by_name[SECOND]["status"] == "yes"
     assert by_name[PRIMARY].get("diet") is None
     assert by_name[SECOND].get("diet") == "vegetarian"
+    assert by_name[PRIMARY]["accessibilityNeeds"] == "Вход без ступеней E2E"
+    assert by_name[PRIMARY]["childNeeds"] is None
+    assert by_name[SECOND]["childNeeds"] == "Детский стульчик E2E"
+    assert by_name[SECOND]["dietNote"] == "Без орехов E2E"
+    assert by_name[SECOND]["accessibilityNeeds"] is None
+    pair_page.reload(wait_until="domcontentloaded")
+    organizer_access = pair_page.get_by_text("Условия доступности · Вход без ступеней E2E", exact=True)
+    expect(organizer_access).to_be_visible(timeout=15_000)
+    expect(pair_page.get_by_text("Потребности ребёнка · Детский стульчик E2E", exact=True)).to_be_visible()
+    pair.set_offline(True)
+    expect(organizer_access).to_have_count(0)
+    pair.set_offline(False)
+    expect(organizer_access).to_be_visible(timeout=15_000)
     result["steps"].append("per-person-rsvp-saved")
 
     menu_block = guest_page.get_by_text("Что будете есть E2E?", exact=True).locator(

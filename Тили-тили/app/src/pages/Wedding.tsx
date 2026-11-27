@@ -1860,6 +1860,8 @@ interface GuestRow {
   comment?: string | null
   diet?: string | null
   dietNote?: string | null
+  childNeeds?: string | null
+  accessibilityNeeds?: string | null
   transfer?: string | null
 }
 
@@ -1884,7 +1886,10 @@ const RSVP_NEXT: Record<GuestRow['status'], 'yes' | 'no' | 'pending'> = { yes: '
 export function Guests() {
   const nav = useNavigate()
   const { weddingId } = useStore()
-  const q = useApi(() => weddingId ? getGuests(weddingId) : noWedding(), [weddingId])
+  const guestScope = useLegacySessionKey(weddingId ?? '')
+  const captureGuests = useLegacyActionScope(guestScope, weddingId)
+  const q = useApi(() => weddingId ? getGuests(weddingId, captureGuests()) : noWedding(), [weddingId, captureGuests])
+  const notesVisible = useLiveAccess(q.reload) && ready(q) && !q.refreshing
 
   /* Приводим ответ сервера к тому, что рисует экран: у него `plusOne` вместо
      `plus` и `pending` вместо `wait`. Подмены моком нет — пустой список это
@@ -1905,10 +1910,12 @@ export function Guests() {
       hasPhone: g.hasPhone,
       comment: g.comment,
       diet: g.diet,
-      dietNote: g.dietNote,
+      dietNote: notesVisible ? g.dietNote : undefined,
+      childNeeds: notesVisible ? g.childNeeds : undefined,
+      accessibilityNeeds: notesVisible ? g.accessibilityNeeds : undefined,
       transfer: g.transfer,
     })),
-    [q.data],
+    [q.data, notesVisible],
   )
 
   const [busyId, setBusyId] = useState<string | null>(null)
@@ -2202,11 +2209,11 @@ export function Guests() {
                 {g.comment && <p className="text-[10.5px] text-[var(--ink2)] mt-1 leading-snug italic">«{g.comment}»</p>}
                 {/* Еда и трансфер — ответы самого гостя в его форме RSVP:
                     пара их видит, но не правит за него. */}
-                {(g.diet || g.dietNote || g.transfer === 'need') && (
+                {(g.diet || g.transfer === 'need') && (
                   <div className="flex gap-1.5 mt-1.5 flex-wrap">
-                    {(g.diet || g.dietNote) && (
+                    {g.diet && (
                       <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-[var(--lav)] text-[var(--lav-ink)]">
-                        🍽 {g.dietNote ?? t(DIET_LABEL[g.diet!] ?? g.diet!)}
+                        🍽 {t(DIET_LABEL[g.diet] ?? g.diet)}
                       </span>
                     )}
                     {g.transfer === 'need' && (
@@ -2214,6 +2221,9 @@ export function Guests() {
                     )}
                   </div>
                 )}
+                {g.dietNote && <p className="mt-1 text-[11px] break-words">{t('Ограничения по еде')} · {g.dietNote}</p>}
+                {g.childNeeds && <p className="mt-1 text-[11px] break-words">{t('Потребности ребёнка')} · {g.childNeeds}</p>}
+                {g.accessibilityNeeds && <p className="mt-1 text-[11px] break-words">{t('Условия доступности')} · {g.accessibilityNeeds}</p>}
               </div>
               {confirmDel === g.id ? (
                 <button disabled={busyId === g.id} onClick={() => remove(g)} className="press text-[9px] font-bold px-2.5 py-1 rounded-full bg-[var(--rose-deep)] text-[var(--card)] disabled:opacity-50">{t('Удалить?')}</button>

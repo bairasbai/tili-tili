@@ -82,17 +82,22 @@ describe('гость: еда и трансфер уходят на сервер 
 
   it('уже ответивший видит свой выбор с сервера и может его изменить', async () => {
     serve({
-      '/rsvp/tok1': { guestName: 'Марина', status: 'yes', plusOne: true, diet: 'other', dietNote: 'орехи', transfer: 'own', wedding: { title: 'Аня ♥ Боря', date: '2027-06-14' } },
+      '/rsvp/tok1': { guestName: 'Марина', status: 'yes', plusOne: true, diet: 'other', dietNote: 'орехи', childNeeds: 'детский стульчик', accessibilityNeeds: 'вход без ступеней', transfer: 'own', wedding: { title: 'Аня ♥ Боря', date: '2027-06-14' } },
       '/join/tok1/menu-vote': { options: [] },
       '/join/tok1/shuttle': { routes: [] },
       '/join/tok1/hotels': [],
     })
     const { container } = await open('/invite', 'Ждём вас!')
-    expect(container.textContent).toContain('С +1 · орехи · Доберусь сам(а)')
+    expect(container.textContent).toContain('С +1 · Другое · Доберусь сам(а)')
+    expect(screen.getByText('Ограничения по еде · орехи')).toBeTruthy()
+    expect(screen.getByText('Потребности ребёнка · детский стульчик')).toBeTruthy()
+    expect(screen.getByText('Условия доступности · вход без ступеней')).toBeTruthy()
     fireEvent.click(screen.getByText('Изменить ответ'))
     /* Форма открывается с прежними значениями, а не пустой. */
     expect(screen.getByText('Приду с радостью')).toBeTruthy()
     expect(screen.getByDisplayValue('орехи')).toBeTruthy()
+    expect(screen.getByDisplayValue('детский стульчик')).toBeTruthy()
+    expect(screen.getByDisplayValue('вход без ступеней')).toBeTruthy()
   })
 })
 

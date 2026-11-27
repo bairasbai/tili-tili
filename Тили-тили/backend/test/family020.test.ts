@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { randomInt, randomUUID } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
@@ -188,6 +188,135 @@ describe.skipIf(!live)('020: family invitations and separate people', () => {
     ])
   })
 
+
+  it('saves, keeps and explicitly clears distinct private needs for each family member', async () => {
+    const f = await family()
+    const url = `/rsvp/${f.guestToken}`
+    const page = await app.inject({ method: 'GET', url })
+    expect(page.statusCode, page.body).toBe(200)
+    const [first, second] = page.json().members as { guestId: string }[]
+    expect(first).toMatchObject({ childNeeds: null, accessibilityNeeds: null })
+    const saved = await app.inject({ method: 'POST', url, payload: { members: [
+      { guestId: first!.guestId, status: 'yes', diet: 'vegan', dietNote: 'Без орехов', accessibilityNeeds: ' Вход без ступеней ' },
+      { guestId: second!.guestId, status: 'yes', dietNote: 'Без молока', childNeeds: 'Детский стульчик' },
+    ] } })
+    expect(saved.statusCode, saved.body).toBe(200)
+    expect(saved.json().members).toMatchObject([
+      { guestId: first!.guestId, diet: 'vegan', dietNote: 'Без орехов', childNeeds: null, accessibilityNeeds: 'Вход без ступеней' },
+      { guestId: second!.guestId, childNeeds: 'Детский стульчик', accessibilityNeeds: null },
+    ])
+    const tooLong = await app.inject({ method: 'POST', url, payload: { status: 'yes', accessibilityNeeds: 'я'.repeat(301) } })
+    expect(tooLong.statusCode, tooLong.body).toBe(422)
+    const legacy = await app.inject({ method: 'POST', url, payload: { status: 'yes', diet: 'vegetarian' } })
+    expect(legacy.statusCode, legacy.body).toBe(200)
+    expect(legacy.json().members[0]).toMatchObject({ diet: 'vegetarian', dietNote: 'Без орехов', accessibilityNeeds: 'Вход без ступеней' })
+    const cleared = await app.inject({ method: 'POST', url, payload: { status: 'yes', accessibilityNeeds: null } })
+    expect(cleared.statusCode, cleared.body).toBe(200)
+    const current = await app.inject({ method: 'GET', url })
+    expect(current.statusCode, current.body).toBe(200)
+    expect(current.json().members).toMatchObject([
+      { guestId: first!.guestId, dietNote: 'Без орехов', accessibilityNeeds: null },
+      { guestId: second!.guestId, childNeeds: 'Детский стульчик', dietNote: 'Без молока' },
+    ])
+    const clearPrimaryDietNote = await app.inject({
+      method: 'PATCH', url: `/weddings/${f.weddingId}/guests/${first!.guestId}`, headers: auth(f.token), payload: { dietNote: null },
+    })
+    expect(clearPrimaryDietNote.statusCode, clearPrimaryDietNote.body).toBe(200)
+    const afterOrganizerChange = await app.inject({ method: 'GET', url })
+    expect(afterOrganizerChange.json().members).toMatchObject([
+      { guestId: first!.guestId, dietNote: null },
+      { guestId: second!.guestId, dietNote: 'Без молока' },
+    ])
+  })
+
+  it('limits private guest notes to the invited family and couple across reads, edits and export', async () => {
+    const f = await family(undefined, 'Гость с личными заметками', false)
+    const other = await family(f, 'Другое приглашение', false)
+    const privateNotes = { dietNote: 'Без орехов', childNeeds: 'Детский стульчик', accessibilityNeeds: 'Вход без ступеней' }
+    const saved = await app.inject({ method: 'POST', url: `/rsvp/${f.guestToken}`, payload: { status: 'yes', diet: 'vegan', ...privateNotes } })
+    expect(saved.statusCode, saved.body).toBe(200)
+    const wrongFamily = await app.inject({ method: 'POST', url: `/rsvp/${other.guestToken}`, payload: { members: [
+      { guestId: f.primaryId, status: 'yes', childNeeds: null },
+    ] } })
+    expect(wrongFamily.statusCode, wrongFamily.body).toBe(404)
+    const otherPage = await app.inject({ method: 'GET', url: `/rsvp/${other.guestToken}` })
+    expect(otherPage.statusCode, otherPage.body).toBe(200)
+    expect(otherPage.json().members.map((guest: { guestId: string }) => guest.guestId)).toEqual([other.primaryId])
+    for (const note of Object.values(privateNotes)) expect(otherPage.body).not.toContain(note)
+    const guestsUrl = `/weddings/${f.weddingId}/guests`
+    for (const role of ['helper', 'coordinator']) {
+      const team = await newUser()
+      await app.db!.query('insert into wedding_members(wedding_id,user_id,role) values($1,$2,$3)', [f.weddingId, team.id, role])
+      const list = await app.inject({ method: 'GET', url: guestsUrl, headers: auth(team.token) })
+      expect(list.statusCode, list.body).toBe(200)
+      const guest = list.json().find((row: { id: string }) => row.id === f.primaryId)
+      expect(guest).toMatchObject({ id: f.primaryId, diet: 'vegan' })
+      for (const key of Object.keys(privateNotes)) expect(guest).not.toHaveProperty(key)
+      const write = await app.inject({ method: 'PATCH', url: `${guestsUrl}/${f.primaryId}`, headers: auth(team.token), payload: { dietNote: null } })
+      expect(write.statusCode, write.body).toBe(403)
+      const exported = await app.inject({ method: 'GET', url: '/users/me/export', headers: auth(team.token) })
+      expect(exported.statusCode, exported.body).toBe(200)
+      expect(exported.json().guests).toEqual(expect.arrayContaining([expect.objectContaining({ name: 'Гость с личными заметками', diet: 'vegan' })]))
+      for (const note of Object.values(privateNotes)) expect(exported.body).not.toContain(note)
+    }
+    const list = await app.inject({ method: 'GET', url: guestsUrl, headers: auth(f.token) })
+    expect(list.statusCode, list.body).toBe(200)
+    expect(list.json().find((row: { id: string }) => row.id === f.primaryId)).toMatchObject(privateNotes)
+    const exported = await app.inject({ method: 'GET', url: '/users/me/export', headers: auth(f.token) })
+    expect(exported.statusCode, exported.body).toBe(200)
+    expect(exported.json().guests).toEqual(expect.arrayContaining([expect.objectContaining({
+      name: 'Гость с личными заметками', diet_note: privateNotes.dietNote,
+      child_needs: privateNotes.childNeeds, accessibility_needs: privateNotes.accessibilityNeeds,
+    })]))
+  })
+
+  it('rechecks the role for private guest exports after reading the wedding list', async () => {
+    const f = await family(undefined, 'Гость при смене роли', false)
+    const member = await newUser()
+    const db = app.db!
+    await db.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'couple')", [f.weddingId, member.id])
+    const original = db.query.bind(db)
+    let changed = false
+    const query = vi.spyOn(db, 'query').mockImplementation(async (sql, values) => {
+      const result = await original(sql, values)
+      if (!changed && values?.[0] === member.id && sql.includes('w.guests_planned, w.budget_total')) {
+        changed = true
+        await original("update wedding_members set role='helper' where wedding_id=$1 and user_id=$2", [f.weddingId, member.id])
+        await original("update guests set child_needs='Новая личная заметка после отзыва' where id=$1", [f.primaryId])
+      }
+      return result
+    })
+    try {
+      const exported = await app.inject({ method: 'GET', url: '/users/me/export', headers: auth(member.token) })
+      expect(exported.statusCode, exported.body).toBe(200)
+      expect(changed).toBe(true)
+      const guest = exported.json().guests.find((row: { name: string }) => row.name === 'Гость при смене роли')
+      expect(guest).toBeDefined()
+      expect(guest).not.toHaveProperty('child_needs')
+      expect(exported.body).not.toContain('Новая личная заметка после отзыва')
+    } finally {
+      query.mockRestore()
+    }
+  })
+
+  it.each(['organizer', 'guest'] as const)('keeps private needs on the original guest when %s adds a legacy plus-one', async actor => {
+    const f = await family(undefined, 'Синтетическое приглашение', false)
+    const url = `/rsvp/${f.guestToken}`
+    const notes = { dietNote: 'Без орехов', childNeeds: 'Детский стульчик', accessibilityNeeds: 'Вход без ступеней' }
+    const saved = await app.inject({ method: 'POST', url, payload: { status: 'yes', ...notes } })
+    expect(saved.statusCode, saved.body).toBe(200)
+    const expanded = actor === 'guest'
+      ? await app.inject({ method: 'POST', url, payload: { status: 'yes', plusOne: true } })
+      : await app.inject({ method: 'PATCH', url: `/weddings/${f.weddingId}/guests/${f.primaryId}`,
+          headers: auth(f.token), payload: { plusOne: true } })
+    expect(expanded.statusCode, expanded.body).toBe(200)
+    const page = await app.inject({ method: 'GET', url })
+    expect(page.statusCode, page.body).toBe(200)
+    expect(page.json().members).toMatchObject([
+      { guestId: f.primaryId, ...notes },
+      { isPlaceholder: true, dietNote: null, childNeeds: null, accessibilityNeeds: null },
+    ])
+  })
 
   it('one family refusal frees only that bus seat and keeps the room while another member attends', async () => {
     const f = await family()

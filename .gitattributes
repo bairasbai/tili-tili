@@ -149,3 +149,4 @@
 Тили-тили/backend/migrations/1765190000000_complete_wedding_date_task.cjs text eol=lf
 Тили-тили/backend/migrations/1765600000000_service_plan_prices.cjs text eol=lf
 Тили-тили/backend/migrations/1765610000000_service_plan_manual_orders.cjs text eol=lf
+Тили-тили/backend/migrations/1765620000000_guest_accommodation_notes.cjs text eol=lf

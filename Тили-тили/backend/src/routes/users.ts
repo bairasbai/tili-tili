@@ -506,22 +506,24 @@ export async function userRoutes(app: FastifyInstance): Promise<void> {
     }
     const allIds = [...coupleIds, ...otherIds]
 
-    /* Телефон и комментарий гостя читает только пара (`toGuest`, фича 005/014):
-     * помощнику и координатору они не показываются в списке — и выгрузка не
-     * должна становиться обходом (ревью 015, тот же класс, что ERR-0026). */
-    const guests = [
-      ...(await byWeddings(
-        coupleIds,
-        `select wedding_id, party_id, party_position, is_placeholder, name, phone, rsvp, plus_one, group_name, diet, diet_note,
-                transfer, comment, created_at
-           from guests where wedding_id = any($1) order by created_at`,
-      )),
-      ...(await byWeddings(
-        otherIds,
-        `select wedding_id, party_id, party_position, is_placeholder, name, rsvp, plus_one, group_name, diet, diet_note, transfer, created_at
-           from guests where wedding_id = any($1) order by created_at`,
-      )),
-    ]
+    /* Проверяем роль в том же чтении, которое выдаёт личные поля гостя.
+     * За время выгрузки роль из weddingRows уже могла измениться. */
+    const { rows: guestRows } = await db().query(
+      `select g.wedding_id, g.party_id, g.party_position, g.is_placeholder, g.name, g.rsvp,
+              g.plus_one, g.group_name, g.diet, g.transfer, g.created_at, m.role,
+              case when m.role='couple' then g.phone end as phone,
+              case when m.role='couple' then g.comment end as comment,
+              case when m.role='couple' then g.diet_note end as diet_note,
+              case when m.role='couple' then g.child_needs end as child_needs,
+              case when m.role='couple' then g.accessibility_needs end as accessibility_needs
+         from guests g join wedding_members m on m.wedding_id=g.wedding_id and m.user_id=$2
+        where g.wedding_id=any($1) and m.role in ('couple','helper','coordinator')
+        order by m.role <> 'couple', g.created_at`,
+      [allIds, userId],
+    )
+    const guests = guestRows.map(({ role, phone, comment, diet_note, child_needs, accessibility_needs, ...guest }) =>
+      role === 'couple' ? { ...guest, phone, comment, diet_note, child_needs, accessibility_needs } : guest,
+    )
     const shortlist = await byWeddings(
       coupleIds,
       `select s.wedding_id, sl.slot_id, sl.position, sl.created_at,

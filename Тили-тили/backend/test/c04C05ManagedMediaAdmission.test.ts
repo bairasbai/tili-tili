@@ -40,13 +40,13 @@ const lodging = reviewedMigrationPins(129)
 const staff = reviewedMigrationPins(130)
 const supportScope = reviewedMigrationPins(131), agreementScope = reviewedMigrationPins(132), availabilityScope = reviewedMigrationPins(133), externalScope = reviewedMigrationPins(134)
 const weddingDateScope = reviewedMigrationPins(135), priceScope = reviewedMigrationPins(136)
-const currentScope = reviewedMigrationPins(137), currentNames = currentScope.map(p => p.name)
+const currentScope = reviewedMigrationPins(138), currentNames = currentScope.map(p => p.name)
 const media = { name: '1764830000000_managed_portfolio_media', sha256: '2FCDAA78A7350E8A2C01649B6F500C1FC8A727A3616E440B62BED9C2522F059C' }
 const album = { name: '1764840000000_managed_guest_album', sha256: '7C6BC9569EFFA42992D23F3EF680D5FDFAB17F56DAE9B954A26B9DC8F8E89700' }
 const paths = execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', '-z'], { cwd: repo, encoding: 'utf8' }).split('\0').filter(Boolean)
 const contract = { name: '1764850000000_managed_contract_attachment', sha256: '870F039C20CFB231536BE7F6A51C2AFB431F419A58317144956E7646474EE2C3' }
 const batch = { name: '1764860000000_planb_notification_batches', sha256: 'A741850B56DF5A289675C5F1B57544CF253747F426C96FAAE1ABCEA3024366AA' }
-const source = { kind: 'c04_c05_current_source137_v1' as const, backend, repo, files: paths.map(path => ({ path, sha256: fileSHA(join(repo, path)) })) }
+const source = { kind: 'c04_c05_current_source138_v1' as const, backend, repo, files: paths.map(path => ({ path, sha256: fileSHA(join(repo, path)) })) }
 const required = [
   'test-support/c04-c05-managed-media-migrations.json', 'test-support/managed-media-migration-drill.mjs', 'test/c04C05ManagedMediaAdmission.test.ts',
   'migrations/1764830000000_managed_portfolio_media.cjs', 'src/media/config.ts', 'src/media/storage.ts', 'src/media/scanner.ts', 'src/media/photo.ts',
@@ -100,6 +100,7 @@ const required = [
   'migrations/1765600000000_service_plan_prices.cjs',
   'src/service-plans/pricedCatalog.ts',
   'migrations/1765610000000_service_plan_manual_orders.cjs',
+  'migrations/1765620000000_guest_accommodation_notes.cjs',
   'src/routes/servicePlanBilling.ts',
   'src/service-plans/manualOrders.ts',
   'test/servicePlanBilling.test.ts',
@@ -205,16 +206,17 @@ describe('independently pinned managed-media admissions', () => {
     expect(weddingDateScope.slice(0, 134)).toEqual(externalScope)
     expect(priceScope.slice(0, 135)).toEqual(weddingDateScope)
     expect(currentScope.slice(0, 136)).toEqual(priceScope)
+    expect(currentScope.slice(0, 137)).toEqual(reviewedMigrationPins(137))
     expect(verifySource(source)).toEqual(currentNames)
     expect(() => assertJournal(planBNames, planBNames)).not.toThrow()
     expect(() => verifyMigrationDirectory(directory, reviewedMigrationPins(98))).toThrow()
-    expect(() => reviewedMigrationPins(138)).toThrow(); expect(() => reviewedMigrationPins(84)).toThrow()
+    expect(() => reviewedMigrationPins(139)).toThrow(); expect(() => reviewedMigrationPins(84)).toThrow()
   })
-  it.each([98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136] as const)(
+  it.each([98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137] as const)(
     'refuses to admit current physical SQL as schema %i', count => {
       expect(() => verifySource({ ...source, kind: `c04_c05_current_source${count}_v1` })).toThrow()
     })
-  it.each(required)('refuses incomplete current137 source missing %s', path => {
+  it.each(required)('refuses incomplete current138 source missing %s', path => {
     expect(source.files.some(f => f.path === path)).toBe(true)
     expect(() => verifySource({ ...source, files: source.files.filter(f => f.path !== path) })).toThrow()
   })
