@@ -159,7 +159,7 @@ async function delegationFixture(lang: string) {
   const weddingId = await createWedding(owner, 'Пара WP09 ' + lang, [taskTitle, coordinatorTaskTitle, replacementTaskTitle])
   const otherWeddingId = await createWedding(otherOwner, 'Вторая пара WP09 ' + lang, [otherTaskTitle])
   return { weddingId, otherWeddingId, taskTitle, coordinatorTaskTitle, otherTaskTitle, replacementTaskTitle,
-    owner: owner.first, recipient: recipient.first, coordinator: coordinator.first }
+    owner: owner.first, recipient: recipient.first, coordinator: coordinator.first, coordinatorReopened: coordinator.reopened }
 }
 const wp09 = process.env.E2E_WP09 === 'yes' ? { ru: await delegationFixture('RU'), en: await delegationFixture('EN') } : undefined
 

@@ -95,10 +95,15 @@ function WeddingBoard({ scope, weddingId, onSelectWedding }: { scope: string; we
     if (confirmRemoval) {
       cancelRemoval.current?.focus()
     } else {
-      removalTrigger.current?.focus()
+      const trigger = removalTrigger.current
       removalTrigger.current = null
+      if (trigger?.isConnected) trigger.focus()
+      else if (trigger && document.activeElement === document.body) document.getElementById(selectId)?.focus()
     }
-  }, [confirmRemoval])
+  }, [confirmRemoval, selectId])
+  if (confirmRemoval && data && !q.refreshing && !employees.has(confirmRemoval.employeeId)) {
+    setConfirmRemoval(null)
+  }
   const create = (event: FormEvent) => {
     event.preventDefault()
     if (!weddingId || !taskId || disabled || !targetReady) return

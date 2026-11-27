@@ -245,20 +245,28 @@ def verify_coordinator(browser, lang, errors):
         outlined(cancel)
 
         # A second manager session replaces the grant while this confirmation is open.
-        manager_headers = {'Authorization': 'Bearer ' + fixture['coordinator']['accessToken']}
+        manager_headers = {'Authorization': 'Bearer ' + fixture['coordinatorReopened']['accessToken']}
         employee_headers = {'Authorization': 'Bearer ' + fixture['recipient']['accessToken']}
-        retired = coordinator.request.delete(UI + remove_path, headers=manager_headers,
-                                             params={'delegationId': first['id']})
-        assert retired.status == 204
         replacement_title = fixture['replacementTaskTitle']
         replacement_id = task_select.get_by_role('option', name=replacement_title, exact=True).get_attribute('value')
-        replacement = coordinator.request.post(UI + board_path, headers=manager_headers,
-                                                data={'taskId': replacement_id, 'targetUserId': employee_code})
-        assert replacement.status == 201
-        grant = replacement.json()
-        accepted = recipient.request.post(UI + MY_TASKS + '/accept', headers=employee_headers,
-                                          data={'code': grant['code']})
-        assert accepted.status == 204
+
+        def retire_in_other_session(grant_id):
+            retired = coordinator.request.delete(UI + remove_path, headers=manager_headers,
+                                                 params={'delegationId': grant_id})
+            assert retired.status == 204
+
+        def grant_in_other_session():
+            replacement = coordinator.request.post(UI + board_path, headers=manager_headers,
+                                                    data={'taskId': replacement_id, 'targetUserId': employee_code})
+            assert replacement.status == 201
+            issued = replacement.json()
+            accepted = recipient.request.post(UI + MY_TASKS + '/accept', headers=employee_headers,
+                                              data={'code': issued['code']})
+            assert accepted.status == 204
+            return issued
+
+        retire_in_other_session(first['id'])
+        grant = grant_in_other_session()
         with coordinator.expect_response(is_board_read):
             coordinator.evaluate("window.dispatchEvent(new Event('focus'))")
         replacement_card = coordinator.get_by_role('article').filter(has_text=replacement_title)
@@ -272,6 +280,22 @@ def verify_coordinator(browser, lang, errors):
         outlined(task_select)
         assert len(removals) == 1
 
+        expect(remove).to_be_enabled()
+        tab_to(coordinator, remove)
+        coordinator.keyboard.press('Enter')
+        outlined(cancel)
+        retire_in_other_session(grant['id'])
+        with coordinator.expect_response(is_board_read) as emptied:
+            coordinator.evaluate("window.dispatchEvent(new Event('focus'))")
+        assert emptied.value.json()['items'] == []
+        expect(confirm).to_have_count(0)
+        outlined(task_select)
+
+        grant = grant_in_other_session()
+        with coordinator.expect_response(is_board_read):
+            coordinator.evaluate("window.dispatchEvent(new Event('focus'))")
+        expect(replacement_card).to_be_visible()
+        expect(confirm).to_have_count(0)
         expect(remove).to_be_enabled()
         tab_to(coordinator, remove)
         coordinator.keyboard.press('Enter')
