@@ -9,12 +9,18 @@ import { parseSeating, recallSeating, rememberSeating } from './offlineSeating'
 
 export async function readSeating(weddingId: string, scope: OfflineScope | null, isCurrent: () => boolean = () => true) {
   const generation = offlineGeneration()
+  const assertCurrent = () => {
+    if (!isCurrent()) {
+      throw new ApiError('http', 409, 'offline_scope_changed', 'Доступ изменился — перечитайте рассадку')
+    }
+  }
   const [guestRead, tableRead, members] = await Promise.all([
-    getGuests(weddingId).then(guests => ({ guests, receivedAt: new Date().toISOString() })),
-    getTables(weddingId).then(tables => ({ tables, receivedAt: new Date().toISOString() })),
-    scope ? getMembers(weddingId) : Promise.resolve(null),
+    getGuests(weddingId, { assertCurrent }).then(guests => ({ guests, receivedAt: new Date().toISOString() })),
+    getTables(weddingId, { assertCurrent }).then(tables => ({ tables, receivedAt: new Date().toISOString() })),
+    scope ? getMembers(weddingId, { assertCurrent }) : Promise.resolve(null),
   ])
-  if (!isCurrent() || generation !== offlineGeneration() || (scope && !sameOfflineScope(scope, offlineScope(accessTokenForWs())))) {
+  assertCurrent()
+  if (generation !== offlineGeneration() || (scope && !sameOfflineScope(scope, offlineScope(accessTokenForWs())))) {
     throw new ApiError('http', 409, 'offline_scope_changed', 'Доступ изменился — перечитайте рассадку')
   }
   if (scope && members) {

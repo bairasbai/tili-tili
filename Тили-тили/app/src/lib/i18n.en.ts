@@ -1602,6 +1602,7 @@ Object.assign(EN, {
   ' — подобрать свободных под ваш бюджет?': ' — find available ones within your budget?',
   'Сохраняем…': 'Saving…',
   'Сохраняем рассадку…': 'Saving seating changes…',
+  'Рассадка изменилась — проверьте места и повторите': 'Seating has changed — check placements and try again',
   'Часть гостей уже рассажена. Список обновляется — проверьте места перед повтором.': 'Some guests have already been seated. The list is refreshing — check placements before retrying.',
   'Часть гостей уже рассажена. Проверьте места перед повтором.': 'Some guests have already been seated. Check placements before retrying.',
   'Автоматическая рассадка прервана. Проверьте места перед повтором.': 'Automatic seating stopped. Check placements before retrying.',

@@ -4027,6 +4027,12 @@ export interface paths {
          * @description Поля RSVP/стола/питания относятся к этой персоне. Переходное plusOne
          *     разрешено только у primary и материализует/удаляет системную вторую
          *     персону; у secondary возвращается 409 `family_member_not_primary`.
+         *     Для рассадки клиент может передать `expectedTableId` вместе с
+         *     `tableId` отдельной командой рассадки. Сервер сверяет прежнее место
+         *     под блокировкой гостя и меняет место только указанной персоны.
+         *     Если прежнее место изменилось, гость отказался от участия,
+         *     гость удалён или целевой стол удалён, возвращается 409
+         *     `seating_changed`. Перед повтором нужно перечитать рассадку.
          */
         patch: {
             parameters: {
@@ -4046,6 +4052,11 @@ export interface paths {
                         /** @enum {string} */
                         status?: "yes" | "no" | "pending";
                         tableId?: string | null;
+                        /**
+                         * Format: uuid
+                         * @description Прежний стол из прочитанной рассадки, null для гостя без места
+                         */
+                        expectedTableId?: string | null;
                         group?: string | null;
                         /** @description null — стереть номер */
                         phone?: string | null;
@@ -4068,8 +4079,17 @@ export interface paths {
                     };
                 };
                 403: components["responses"]["Forbidden"];
-                /** @description `family_member_not_primary`, `table_full` или `bus_full` */
+                /** @description `family_member_not_primary`, `table_full`, `bus_full` или `seating_changed` */
                 409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description `seating_precondition_invalid` — `expectedTableId` передан без `tableId` или вместе с другой правкой гостя. `validation_failed` — тело запроса не прошло проверку схемы или передан нераспознанный номер телефона. */
+                422: {
                     headers: {
                         [name: string]: unknown;
                     };

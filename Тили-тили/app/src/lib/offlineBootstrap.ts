@@ -3,7 +3,7 @@ import { OFFLINE_DAY_KEY, OFFLINE_PROGRAM_KEY, OFFLINE_SEATING_KEY, offlineScope
 import { parseDay } from './offlineDay'
 import { parseOfflineProgram } from './offlineProgram'
 import { parseSeating } from './offlineSeating'
-import { GUEST_DAY_OFFLINE_KEY, GUEST_EVENT_OFFLINE_KEY, parseGuestDayCopy, parseGuestEventCopies } from './guestDayOffline'
+import { GUEST_DAY_OFFLINE_KEY, GUEST_EVENT_OFFLINE_KEY, parseStoredGuestDayCopy, purgeInvalidGuestSnapshots, sanitizeGuestEventCopies } from './guestDayOffline'
 
 function programEnvelope(value: unknown, currentNamespace: string | null): object | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)
@@ -15,25 +15,21 @@ function programEnvelope(value: unknown, currentNamespace: string | null): objec
   return copies.length && new Set(identities).size === copies.length ? { schema: 1, entries: copies } : null
 }
 
-function eventEnvelope(value: unknown): object | null {
-  const entries = parseGuestEventCopies(value)
-  return entries ? { schema: 1, entries } : null
-}
-
 function remove(key: string): void {
   try { localStorage.removeItem(key) } catch { /* Site storage may be blocked. */ }
 }
 
 /** Run before mounting readers: retain only existing scoped, minimal copies; never infer access. */
 export function sanitizeOfflineBootstrap(): void {
+  purgeInvalidGuestSnapshots()
   const scope = offlineScope(accessTokenForWs())
   const namespace = registeredProgramNamespace(scope)
   const copies: readonly [string, (value: unknown) => object | null][] = [
     [OFFLINE_DAY_KEY, value => { const copy = parseDay(value); return copy && sameOfflineScope(copy.scope, scope) ? copy : null }],
     [OFFLINE_PROGRAM_KEY, value => programEnvelope(value, namespace)],
     [OFFLINE_SEATING_KEY, value => { const copy = parseSeating(value); return copy && sameOfflineScope(copy.scope, scope) ? copy : null }],
-    [GUEST_DAY_OFFLINE_KEY, parseGuestDayCopy],
-    [GUEST_EVENT_OFFLINE_KEY, eventEnvelope],
+    [GUEST_DAY_OFFLINE_KEY, parseStoredGuestDayCopy],
+    [GUEST_EVENT_OFFLINE_KEY, sanitizeGuestEventCopies],
   ]
   for (const [key, project] of copies) {
     let raw: string | null

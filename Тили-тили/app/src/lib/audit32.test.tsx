@@ -400,8 +400,61 @@ describe('T3: столы переименовываются и удаляютс�
     destination.focus()
     fireEvent.click(destination, { detail: 0 })
 
-    await waitFor(() => expect(patches(calls, path).map(call => call.body)).toEqual([{ tableId: TABLE.id }]))
+    await waitFor(() => expect(patches(calls, path).map(call => call.body)).toEqual([{ tableId: TABLE.id, expectedTableId: null }]))
     await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('heading', { name: TABLE.name })))
+  })
+
+  it.each([
+    { detail: 0, focusAway: false },
+    { detail: 1, focusAway: false },
+    { detail: 0, focusAway: true },
+  ])('сохраняет ручной выбор при 503 (click detail=$detail, focusAway=$focusAway)', async ({ detail, focusAway }) => {
+    const claims = btoa(JSON.stringify({ sub: 'u1', sid: 'seating-session' }))
+    localStorage.setItem('tt_auth', JSON.stringify({ accessToken: `header.${claims}.signature`, refreshToken: 'r' }))
+    const guest: Guest = { id: 'g1', name: 'Ольга', status: 'yes', tableId: null }
+    const guestRoute = '/weddings/w1/guests'
+    const memberRoute = '/weddings/w1/members'
+    const path = `${guestRoute}/${guest.id}`
+    const freshMembers = gate()
+    let reads = 0
+    let writes = 0
+    let guests = [guest]
+    const calls = serve(seating({
+      [guestRoute]: () => guests,
+      '/weddings/w1/tables': () => [{ ...TABLE, guestIds: guests.filter(g => g.tableId === TABLE.id).map(g => g.id) }],
+      [memberRoute]: () => ++reads === 2 ? freshMembers.reply : [{ user: ME, role: 'couple' }],
+      [path]: () => {
+        if (++writes === 1) return withStatus(503, 'db_unavailable', 'База временно недоступна')
+        const seated = { ...guest, tableId: TABLE.id }
+        guests = [seated]
+        return seated
+      },
+    }))
+    openSeating()
+
+    fireEvent.click(await screen.findByRole('button', { name: guest.name, pressed: false }))
+    const label = `Посадить за стол ${TABLE.name}`
+    const first = screen.getByRole('button', { name: label })
+    first.focus()
+    fireEvent.click(first, { detail })
+    await waitFor(() => expect(reads).toBe(2))
+    expect(screen.queryByRole('button', { name: label })).toBeNull()
+    expect(patches(calls, path)).toHaveLength(1)
+    if (focusAway) screen.getByRole('button', { name: 'Назад' }).focus()
+
+    freshMembers.release([{ user: ME, role: 'couple' }])
+    const retry = await screen.findByRole('button', { name: label })
+    expect(alerts()).toContain('Сервер недоступен. Попробуйте позже')
+    expect(screen.getByRole('button', { name: guest.name, pressed: true })).toBeTruthy()
+    expect(document.activeElement).toBe(focusAway ? screen.getByRole('button', { name: 'Назад' }) : retry)
+    retry.focus()
+    fireEvent.click(retry, { detail })
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('heading', { name: TABLE.name })))
+    expect(patches(calls, path).map(call => call.body)).toEqual([
+      { tableId: TABLE.id, expectedTableId: null },
+      { tableId: TABLE.id, expectedTableId: null },
+    ])
+    expect(alerts()).not.toContain('Сервер недоступен')
   })
 
   it.each([
@@ -439,7 +492,7 @@ describe('T3: столы переименовываются и удаляютс�
       const destination = screen.getByRole('button', { name: `${seatAt} ${TABLE.name}` })
       const guestWrites = () => calls.filter(call => call.method === 'PATCH' && call.path.startsWith('/weddings/w1/guests/'))
         .map(({ path, body }) => ({ path, body }))
-      const request = { path, body: { tableId: TABLE.id } }
+      const request = { path, body: { tableId: TABLE.id, expectedTableId: null } }
       destination.focus()
       fireEvent.click(destination, { detail: 0 })
       expect(guestWrites()).toEqual([request])
@@ -524,8 +577,8 @@ describe('T3: столы переименовываются и удаляютс�
         (method === 'GET' && path === guestRoute) || (method === 'PATCH' && path.startsWith(`${guestRoute}/`)),
       ).map(({ method, path, body }) => ({ method, path, body }))
       const readGuests = { method: 'GET', path: guestRoute, body: null }
-      const seatOlga = { method: 'PATCH', path: olgaRoute, body: { tableId: TABLE.id } }
-      const seatMarina = { method: 'PATCH', path: marinaRoute, body: { tableId: TABLE.id } }
+      const seatOlga = { method: 'PATCH', path: olgaRoute, body: { tableId: TABLE.id, expectedTableId: null } }
+      const seatMarina = { method: 'PATCH', path: marinaRoute, body: { tableId: TABLE.id, expectedTableId: null } }
       const partialRequests = [readGuests, seatOlga, seatMarina, readGuests]
 
       openSeating()
@@ -533,6 +586,7 @@ describe('T3: столы переименовываются и удаляютс�
       expect(screen.getByRole('button', { name: marina.name, pressed: false })).toBeTruthy()
       const autoSeat = screen.getByRole<HTMLButtonElement>('button', { name: autoSeatName })
       expect(autoSeat.disabled).toBe(false)
+      autoSeat.focus()
       fireEvent.click(autoSeat)
 
       await waitFor(() => expect(guestRequests()).toEqual(partialRequests))
@@ -545,6 +599,7 @@ describe('T3: столы переименовываются и удаляютс�
       refresh.release(guests)
       const retry = await screen.findByRole<HTMLButtonElement>('button', { name: autoSeatName })
       expect(retry.disabled).toBe(false)
+      expect(document.activeElement).toBe(retry)
       expect(alerts()).toContain(retryWarning)
       expect(screen.queryByRole('button', { name: olga.name, pressed: false })).toBeNull()
       expect(screen.getByRole('button', { name: olga.name })).toBeTruthy()
@@ -609,7 +664,7 @@ describe('T3: столы переименовываются и удаляютс�
     fireEvent.click(screen.getByRole('button', { name: marina.name, pressed: false }))
     fireEvent.click(screen.getByRole('button', { name: `Посадить за стол ${TABLE.name}` }))
 
-    expect(patches(calls, marinaRoute).map(({ body }) => body)).toEqual([{ tableId: TABLE.id }, { tableId: TABLE.id }])
+    expect(patches(calls, marinaRoute).map(({ body }) => body)).toEqual([{ tableId: TABLE.id, expectedTableId: null }, { tableId: TABLE.id, expectedTableId: null }])
     await waitFor(() => {
       expect(screen.getByRole('button', { name: marina.name })).toBeTruthy()
       expect(screen.queryByRole('button', { name: marina.name, pressed: false })).toBeNull()
@@ -639,7 +694,7 @@ describe('T3: столы переименовываются и удаляютс�
       }))
       const guestWrites = () => calls.filter(({ method, path }) => method === 'PATCH' && /\/guests\//.test(path))
         .map(({ path, body }) => ({ path, body }))
-      const onlyFirst = [{ path: olgaRoute, body: { tableId: TABLE.id } }]
+      const onlyFirst = [{ path: olgaRoute, body: { tableId: TABLE.id, expectedTableId: null } }]
       function SeatingWithSwitch() {
         const { setWeddingId } = useStore()
         return <>

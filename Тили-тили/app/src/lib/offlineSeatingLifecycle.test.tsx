@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Seating } from '@/pages/Tools'
 import { api, reportConsentOutdated, saveTokens, url } from './api/client'
 import { forgetOfflineSeating } from './offlineAccess'
+import { readSeating } from './useSeating'
 
 const { currentWedding } = vi.hoisted(() => ({ currentWedding: { id: 'w1' } }))
 vi.mock('@/lib/store', () => ({ useStore: () => ({ weddingId: currentWedding.id }) }))
@@ -15,6 +16,7 @@ function serve(allSeated = true) {
   let rejectionCode = 'seating_closed'
   let role = 'couple'
   let hold: Promise<void> | null = null
+  let denyAfterWait: string | null = null
   let completed = 0
   const writes: { path: string; body: unknown }[] = []
   const people = [
@@ -27,6 +29,9 @@ function serve(allSeated = true) {
     if (down) throw new TypeError('Failed to fetch')
     if (rejection) return new Response(JSON.stringify({ error: { code: rejectionCode, message: 'Seating access refused' } }), { status: rejection, headers: { 'content-type': 'application/json' } })
     if (hold) await hold
+    if (path === denyAfterWait) return new Response(JSON.stringify({ error: { code: 'not_found', message: 'Old wedding refused' } }), {
+      status: 404, headers: { 'content-type': 'application/json' },
+    })
     if (method === 'PATCH') { const p = people.find(p => path.endsWith('/' + p.id)); if (p) Object.assign(p, JSON.parse(String(init!.body))) }
     const localPeople = path.includes('/weddings/w2/') ? people.map(p => ({ ...p, id: 'w2-' + p.id, name: 'New wedding ' + p.name, tableId: p.tableId ? 'w2-' + p.tableId : null })) : people
     const tableId = path.includes('/weddings/w2/') ? 'w2-t1' : 't1'
@@ -39,6 +44,7 @@ function serve(allSeated = true) {
     completed: () => completed,
     reject: (status: number, code = 'seating_closed') => { rejection = status; rejectionCode = code }, role: (value: string) => { role = value },
     hold: (promise: Promise<void> | null) => { hold = promise },
+    denyLater: (path: string) => { denyAfterWait = path },
     down: () => { down = true },
     online: () => { down = false; vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true); fireEvent(window, new Event('online')) },
     offline: () => { down = true; vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false); fireEvent(window, new Event('offline')) } }
@@ -47,6 +53,7 @@ const open = () => render(<MemoryRouter><Seating /></MemoryRouter>)
 beforeEach(() => {
   currentWedding.id = 'w1'
   localStorage.clear()
+  localStorage.setItem('tt_wedding_id', JSON.stringify(currentWedding.id))
   saveTokens({ accessToken: `e30.${btoa(JSON.stringify({ sub: 'u1', sid: 's1' }))}.test`, refreshToken: 'r1' })
   vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
 })
@@ -62,7 +69,7 @@ describe('seating actual person-shaped DTO and offline lifecycle', () => {
     const control = serve(false); open(); await screen.findByText('Family Bob')
     expect(screen.getByText('1/2')).toBeTruthy()
     fireEvent.click(screen.getByText('Family Bob')); fireEvent.click(screen.getByText('Known table'))
-    await waitFor(() => expect(control.writes).toEqual([{ path: '/weddings/w1/guests/g2', body: { tableId: 't1' } }]))
+    await waitFor(() => expect(control.writes).toEqual([{ path: '/weddings/w1/guests/g2', body: { tableId: 't1', expectedTableId: null } }]))
     await screen.findByText('2/2')
   })
   it('keeps the permitted seating copy after a payment-required write refusal', async () => {
@@ -175,6 +182,44 @@ describe('seating actual person-shaped DTO and offline lifecycle', () => {
     await waitFor(() => expect(control.completed()).toBe(6))
     expect(JSON.parse(localStorage.getItem(KEY)!).weddingId).toBe('w2')
     expect(screen.getByText('New wedding Family Alice')).toBeTruthy()
+  })
+  it('a late refusal for the old wedding cannot invalidate the new wedding read', async () => {
+    const control = serve()
+    let releaseOld!: () => void
+    let releaseNew!: () => void
+    control.hold(new Promise<void>(resolve => { releaseOld = resolve }))
+    control.denyLater('/weddings/w1/guests')
+    const view = open()
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(3))
+    control.hold(new Promise<void>(resolve => { releaseNew = resolve }))
+    currentWedding.id = 'w2'
+    view.rerender(<MemoryRouter><Seating /></MemoryRouter>)
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(6))
+    await act(async () => { releaseOld() })
+    await act(async () => { releaseNew() })
+    expect(await screen.findByText('New wedding Family Alice')).toBeTruthy()
+    expect(JSON.parse(localStorage.getItem(KEY)!).weddingId).toBe('w2')
+    expect(screen.queryByText('Доступ изменился — перечитайте рассадку')).toBeNull()
+  })
+  it('an expired active session still clears the copy and reports session_expired', async () => {
+    serve()
+    open()
+    await screen.findByText('Family Bob')
+    expect(localStorage.getItem(KEY)).not.toBeNull()
+    cleanup()
+    const originalFetch = fetch
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith('/weddings/w1/guests') || String(input).endsWith('/auth/refresh')) {
+        return Promise.resolve(new Response(JSON.stringify({ error: { code: 'token_expired', message: 'Expired' } }), {
+          status: 401, headers: { 'content-type': 'application/json' },
+        }))
+      }
+      return originalFetch(input, init)
+    }))
+    await expect(readSeating('w1', { userId: 'u1', sessionId: 's1' })).rejects.toMatchObject({
+      status: 401, code: 'session_expired',
+    })
+    expect(localStorage.getItem(KEY)).toBeNull()
   })
   it('unmounted reader cannot save a copy from an abandoned pending route', async () => {
     const control = serve(); let release!: () => void

@@ -585,6 +585,37 @@ describe.skipIf(!live)('020: family invitations and separate people', () => {
     expect(single.statusCode, single.body).toBe(200)
   })
 
+  it.each([false, true])('guarded seats address only the selected person in a legacy family (companion already seated: %s)', async previouslySeated => {
+    const f = await family()
+    const base = `/weddings/${f.weddingId}`
+    const headers = auth(f.token)
+    async function table(name: string, capacity: number) {
+      const response = await app.inject({ method: 'POST', url: base + '/tables', headers, payload: { name, capacity } })
+      expect(response.statusCode, response.body).toBe(201)
+      return response.json().id as string
+    }
+    const first = await table('Primary table', previouslySeated ? 1 : 2)
+    const companion = (await app.db!.query<{ id: string }>(
+      'select id from guests where party_id=$1 and party_position=2 and is_placeholder', [f.partyId],
+    )).rows[0]!.id
+    async function seat(id: string, tableId: string | null, expectedTableId: string | null) {
+      const response = await app.inject({
+        method: 'PATCH', url: base + '/guests/' + id, headers, payload: { tableId, expectedTableId },
+      })
+      expect(response.statusCode, response.body).toBe(200)
+    }
+    const second = previouslySeated ? await table('Companion table', 1) : first
+    if (previouslySeated) await seat(companion, second, null)
+    await seat(f.primaryId, first, null)
+    const readCompanion = async () => (await app.db!.query<{ table_id: string | null }>(
+      'select table_id from guests where id=$1', [companion],
+    )).rows[0]!.table_id
+    expect(await readCompanion()).toBe(previouslySeated ? second : null)
+    if (!previouslySeated) await seat(companion, first, null)
+    await seat(f.primaryId, null, first)
+    expect(await readCompanion()).toBe(second)
+  })
+
   it('legacy plusOne creation at a one-seat table is refused atomically without a new person', async () => {
     const f = await newWedding()
     const guest = await app.inject({ method: 'POST', url: `/weddings/${f.weddingId}/guests`, headers: auth(f.token), payload: { name: 'Solo person' } })

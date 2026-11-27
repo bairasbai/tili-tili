@@ -524,6 +524,7 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
             phone: { type: 'string', nullable: true, maxLength: 32 },
             // Стол уходит в колонку uuid; `null` снимает рассадку (R-17).
             tableId: { ...UUID_ID, nullable: true },
+            expectedTableId: { ...UUID_ID, nullable: true },
             diet: {
               type: 'string',
               nullable: true,
@@ -544,6 +545,12 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
       // `undefined` — поле не прислали, оставить как есть. Явный `null` —
       // снять значение (R-17): пропуск и очистка это разные намерения.
       const has = (k: string) => Object.prototype.hasOwnProperty.call(body, k)
+      const expectedTable = body.expectedTableId as string | null | undefined
+      const singleSeat = expectedTable !== undefined
+      if (singleSeat && (!has('tableId') || Object.keys(body).length !== 2)) {
+        throw new AppError(422, 'seating_precondition_invalid', 'Отправьте изменение места отдельно от других правок гостя')
+      }
+      const seatingChanged = () => conflict('seating_changed', 'Рассадка изменилась — проверьте места и повторите')
 
       /* Правка гостя, посадка и освобождение мест — одна транзакция (R-122):
        * «не придёт» с сиденьем в автобусе, оставшимся за гостем, — состояние,
@@ -573,8 +580,12 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
              from guests where id = $1 and wedding_id = $2 for update`,
           [guestId, weddingId],
         )
-        if (locked.length === 0) throw notFound('Гость не найден')
+        if (locked.length === 0) throw singleSeat ? seatingChanged() : notFound('Гость не найден')
         const current = locked[0]!
+        if (singleSeat && (
+          current.table_id !== (expectedTable?.toLowerCase() ?? null)
+          || (body.tableId !== null && current.rsvp === 'no')
+        )) throw seatingChanged()
 
         /* Вместимость стола проверяется и при пересадке, и при «+1» без
          * пересадки: гость уже сидит, а «+1» добавляет за столом персону
@@ -582,7 +593,7 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
         if (has('plusOne') && current.party_position !== 1) {
           throw new AppError(409, 'family_member_not_primary', 'Состав семьи меняется у основного приглашённого')
         }
-        const { rows: secondRows } = current.party_position === 1 && (has('plusOne') || has('tableId'))
+        const { rows: secondRows } = !singleSeat && current.party_position === 1 && (has('plusOne') || has('tableId'))
           ? await client.query<{ id: string; table_id: string | null; is_placeholder: boolean }>(
             'select id, table_id, is_placeholder from guests where party_id=$1 and party_position=2 for update',
             [current.party_id],
@@ -600,7 +611,7 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
             'select name, capacity from tables where id = $1 and wedding_id = $2 for update',
             [tableToCheck, weddingId],
           )
-          if (table.length === 0) throw notFound('Стол не найден')
+          if (table.length === 0) throw singleSeat ? seatingChanged() : notFound('Стол не найден')
 
           // Named people move individually. Only a generated legacy companion
           // follows the primary; count the actual projected assignment, not family size.
@@ -748,7 +759,7 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
         /* Legacy family fields were shared by the old +1 row. Keep generated
          * placeholders in sync when the pair edits the primary through the
          * old single-person route. A real named member is edited separately. */
-        if (current.party_position === 1) {
+        if (!singleSeat && current.party_position === 1) {
           const synced = await client.query<{ id: string }>(
             `update guests set
                  rsvp = case when $2 then $3 else rsvp end,
