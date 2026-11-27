@@ -135,17 +135,31 @@ const wp05 = process.env.E2E_WP05 === 'yes' ? { ru: await calendarFixture('RU'),
 
 async function delegationFixture(lang: string) {
   const owner = await browserAccount('Пара WP09 ' + lang)
+  const otherOwner = await browserAccount('Вторая пара WP09 ' + lang)
   const recipient = await browserAccount('Помощник WP09 ' + lang)
+  const coordinator = await browserAccount('Координатор WP09 ' + lang)
   const date = new Date(Date.now() + 4 * 86_400_000).toISOString().slice(0, 10)
-  const wedding = await app.inject({ method: 'POST', url: '/weddings',
-    headers: { authorization: 'Bearer ' + owner.first.accessToken },
-    payload: { partnerName: 'Пара WP09 ' + lang, city: { name: 'Уфа', region: 'Башкортостан' }, date } })
-  if (wedding.statusCode !== 201) throw new Error(`WP09 wedding returned ${wedding.statusCode}`)
-  const weddingId = wedding.json<{ id: string }>().id
+  async function createWedding(account: typeof owner, partnerName: string, titles: string[]) {
+    const wedding = await app.inject({ method: 'POST', url: '/weddings',
+      headers: { authorization: 'Bearer ' + account.first.accessToken },
+      payload: { partnerName, city: { name: 'Уфа', region: 'Башкортостан' }, date } })
+    if (wedding.statusCode !== 201) throw new Error(`WP09 wedding returned ${wedding.statusCode}`)
+    const weddingId = wedding.json<{ id: string }>().id
+    await app.db!.query("insert into wedding_members(wedding_id,user_id,role) values($1,$2,'coordinator')", [weddingId, coordinator.userId])
+    for (const title of titles) {
+      await app.db!.query("insert into tasks(id,wedding_id,title,kind,source,period) values($1,$2,$3,'checklist','user','3')",
+        [randomUUID(), weddingId, title])
+    }
+    return weddingId
+  }
   const taskTitle = 'Confirm meeting point WP09 ' + lang
-  await app.db!.query("insert into tasks(id,wedding_id,title,kind,source,period) values($1,$2,$3,'checklist','user','3')",
-    [randomUUID(), weddingId, taskTitle])
-  return { weddingId, taskTitle, owner: owner.first, recipient: recipient.first }
+  const coordinatorTaskTitle = 'Confirm first wedding route WP09 ' + lang
+  const otherTaskTitle = 'Confirm second wedding route WP09 ' + lang
+  const replacementTaskTitle = 'Confirm updated wedding route WP09 ' + lang
+  const weddingId = await createWedding(owner, 'Пара WP09 ' + lang, [taskTitle, coordinatorTaskTitle, replacementTaskTitle])
+  const otherWeddingId = await createWedding(otherOwner, 'Вторая пара WP09 ' + lang, [otherTaskTitle])
+  return { weddingId, otherWeddingId, taskTitle, coordinatorTaskTitle, otherTaskTitle, replacementTaskTitle,
+    owner: owner.first, recipient: recipient.first, coordinator: coordinator.first }
 }
 const wp09 = process.env.E2E_WP09 === 'yes' ? { ru: await delegationFixture('RU'), en: await delegationFixture('EN') } : undefined
 

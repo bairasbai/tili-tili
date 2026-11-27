@@ -67,10 +67,14 @@ function WeddingBoard({ scope, weddingId, onSelectWedding }: { scope: string; we
   const { busy, error, run } = useTaskDelegationAction(capture, q.reload)
   const [selected, setSelected] = useState('')
   const [employeeCode, setEmployeeCode] = useState('')
-  const [confirmRemoval, setConfirmRemoval] = useState<string | null>(null)
+  const [confirmRemoval, setConfirmRemoval] = useState<{ employeeId: string; delegationId: string } | null>(null)
   const [invitation, setInvitation] = useState<TaskDelegationInvitation | null>(null)
   const createButton = useRef<HTMLButtonElement>(null)
   const invitationField = useRef<HTMLInputElement>(null)
+  const invitationPanel = useRef<HTMLDivElement>(null)
+  const removalTrigger = useRef<HTMLButtonElement>(null)
+  const removalConfirmation = useRef<HTMLDivElement>(null)
+  const cancelRemoval = useRef<HTMLButtonElement>(null)
   const selectId = useId()
   const linkId = useId()
   const employeeId = useId()
@@ -87,6 +91,14 @@ function WeddingBoard({ scope, weddingId, onSelectWedding }: { scope: string; we
   useLayoutEffect(() => {
     if (link && document.activeElement === createButton.current) invitationField.current?.focus()
   }, [link])
+  useLayoutEffect(() => {
+    if (confirmRemoval) {
+      cancelRemoval.current?.focus()
+    } else {
+      removalTrigger.current?.focus()
+      removalTrigger.current = null
+    }
+  }, [confirmRemoval])
   const create = (event: FormEvent) => {
     event.preventDefault()
     if (!weddingId || !taskId || disabled || !targetReady) return
@@ -119,7 +131,7 @@ function WeddingBoard({ scope, weddingId, onSelectWedding }: { scope: string; we
               {t(data.requiresEmployeeCode ? 'Создать ссылку сотруднику' : 'Создать ссылку для помощника')}
             </button>
           </form>
-          {link && <div className="card space-y-2 p-4">
+          {link && <div ref={invitationPanel} className="card space-y-2 p-4">
             <label className="block text-sm font-semibold" htmlFor={linkId}>{t('Ссылка для помощника')}</label>
             <input ref={invitationField} id={linkId} className={field} value={link} readOnly onFocus={event => event.target.select()} />
             <p className="text-sm">{t(data.requiresEmployeeCode
@@ -139,16 +151,25 @@ function WeddingBoard({ scope, weddingId, onSelectWedding }: { scope: string; we
           <h2 className="font-bold">{t('Доступ сотрудников')}</h2>
           {[...employees].map(([id, item]) => <div key={id} className="space-y-2">
             <p className="text-sm">{item.recipientName || t('Сотрудник')}</p>
-            {confirmRemoval === id ? <div className="flex flex-wrap gap-2">
+            <button type="button" className={button} aria-disabled={disabled} hidden={confirmRemoval?.employeeId === id} onClick={event => {
+              if (disabled) return
+              removalTrigger.current = event.currentTarget
+              setConfirmRemoval({ employeeId: id, delegationId: item.id })
+            }}>{t('Отозвать доступ сотрудника')}</button>
+            {confirmRemoval?.employeeId === id && <div ref={removalConfirmation} className="flex flex-wrap gap-2">
               <button type="button" className={button} disabled={disabled} onClick={() => void run(
-                origin => removeDelegatedEmployee(weddingId, id, item.id, origin), () => {
+                origin => removeDelegatedEmployee(weddingId, id, confirmRemoval.delegationId, origin), () => {
+                  removalTrigger.current = null
                   setConfirmRemoval(null)
                   setInvitation(null)
+                  const active = document.activeElement
+                  if (active === document.body || removalConfirmation.current?.contains(active) || invitationPanel.current?.contains(active)) {
+                    document.getElementById(selectId)?.focus()
+                  }
                 })}>{t('Подтвердить отзыв доступа')}</button>
-              <button type="button" className={button} disabled={busy} onClick={() => setConfirmRemoval(null)}>{t('Отмена')}</button>
-            </div> : <button type="button" className={button} disabled={disabled} onClick={() => setConfirmRemoval(id)}>
-              {t('Отозвать доступ сотрудника')}
-            </button>}
+              <button ref={cancelRemoval} type="button" className={button} disabled={busy}
+                onClick={() => setConfirmRemoval(null)}>{t('Отмена')}</button>
+            </div>}
           </div>)}
         </section>}
         {!data.items.length && <p className="text-sm text-[var(--soft)]">{t('Поручений пока нет')}</p>}
