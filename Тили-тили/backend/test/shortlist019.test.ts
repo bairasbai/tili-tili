@@ -5,7 +5,7 @@
  * роли, стирание подрядчика, открытый запрос, независимость брони и занятость.
  */
 import { randomInt, randomUUID } from 'node:crypto'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { hashCode } from '../src/auth/otp.js'
@@ -68,6 +68,7 @@ describe.skipIf(!live)('019 / US1: шорт-лист кандидатов', () =
   let RUN = String(randomInt(100_000, 1_000_000))
   const IP = `198.18.${randomInt(0, 255)}.${randomInt(1, 254)}`
   const createdUsers = new Set<string>()
+  let pendingCleanup = Promise.resolve()
 
   const auth = (token: string) => ({ authorization: `Bearer ${token}` })
   const idem = (token: string) => ({ ...auth(token), 'idempotency-key': randomUUID() })
@@ -94,11 +95,43 @@ describe.skipIf(!live)('019 / US1: шорт-лист кандидатов', () =
     }
   })
 
+  function eraseCreatedUsers() {
+    const db = app?.db
+    if (!db) return pendingCleanup
+
+    // Таймаут хука не останавливает уже начатую уборку.
+    const users = [...createdUsers]
+    const cleanBatch = async () => {
+      const errors: unknown[] = []
+      for (const id of users) {
+        if (!createdUsers.has(id)) continue
+        try {
+          await db.tx((client) => eraseUser(client, id))
+          createdUsers.delete(id)
+        } catch (error) {
+          errors.push(error)
+        }
+      }
+      if (errors.length) throw new AggregateError(errors, 'Не удалось удалить тестовых пользователей шорт-листа')
+    }
+
+    pendingCleanup = pendingCleanup.then(cleanBatch, cleanBatch)
+    return pendingCleanup
+  }
+
+  beforeEach(async () => { await pendingCleanup.catch(() => {}) })
+  afterEach(eraseCreatedUsers)
+  // Следующий файл ждёт завершения очереди и закрытия подключения.
   afterAll(async () => {
-    for (const id of createdUsers) await app.db!.tx((client) => eraseUser(client, id))
-    await app.db!.query('delete from otp_codes where phone like $1', [`+79${RUN}%`])
-    await app?.close()
-  })
+    if (!app) return
+    try {
+      await eraseCreatedUsers().finally(() =>
+        app.db?.query('delete from otp_codes where phone like $1', [`+79${RUN}%`]),
+      )
+    } finally {
+      await app.close()
+    }
+  }, 0)
 
   async function readCode(phone: string): Promise<string> {
     const { rows } = await app.db!.query<{ code_hash: string }>(
@@ -123,6 +156,7 @@ describe.skipIf(!live)('019 / US1: шорт-лист кандидатов', () =
     })
     expect(verified.statusCode, verified.body).toBe(200)
     const body = verified.json() as { accessToken: string; user: { id: string } }
+    createdUsers.add(body.user.id)
     const consent = await app.inject({
       method: 'POST',
       url: '/users/me/consent',
@@ -130,7 +164,6 @@ describe.skipIf(!live)('019 / US1: шорт-лист кандидатов', () =
       payload: { policyVersion: '2026-09-02' },
     })
     expect(consent.statusCode, consent.body).toBe(201)
-    createdUsers.add(body.user.id)
     return { id: body.user.id, token: body.accessToken }
   }
 
