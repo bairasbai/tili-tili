@@ -192,6 +192,45 @@ describe.skipIf(!DB)('seating: live access after actual PostgreSQL waits', () =>
     expect(after.guests).toMatchObject([{ id: w.guestId, table_id: null }])
     expect(after.updates).toHaveLength(1)
   })
+  it('checks the previous seat against a newer assignment under the guest lock', async () => {
+    const w = await setup()
+    const assignedElsewhere = await app.inject({
+      method: 'POST', url: w.base + '/tables', headers: w.headers, payload: { name: 'Other table', capacity: 2 },
+    })
+    expect(assignedElsewhere.statusCode, assignedElsewhere.body).toBe(201)
+    const otherTableId = assignedElsewhere.json().id as string
+    const stale = await whileWaiting(w, 'guest PATCH', client =>
+      client.query('update guests set table_id=$1 where id=$2', [otherTableId, w.guestId]),
+    { tableId: w.tableId, expectedTableId: null }, false)
+    expect(stale.statusCode, stale.body).toBe(409)
+    expect(stale.json().error.code).toBe('seating_changed')
+    expect((await snapshot(w)).guests).toMatchObject([{ id: w.guestId, table_id: otherTableId }])
+    const retried = await send(w, 'guest PATCH', { tableId: w.tableId, expectedTableId: otherTableId.toUpperCase() })
+    expect(retried.statusCode, retried.body).toBe(200)
+    expect(retried.json().tableId).toBe(w.tableId)
+  })
+  it.each(['guest', 'table'] as const)('reports a deleted %s as a recoverable seating change', async missing => {
+    const w = await setup()
+    const remove = await send(w, missing === 'guest' ? 'guest DELETE' : 'table DELETE')
+    expect(remove.statusCode, remove.body).toBe(204)
+    const before = await snapshot(w)
+    const stale = await send(w, 'guest PATCH', { tableId: w.tableId, expectedTableId: null })
+    expect(stale.statusCode, stale.body).toBe(409)
+    expect(stale.json().error.code).toBe('seating_changed')
+    expect((await send(w, 'guest PATCH')).statusCode).toBe(404)
+    expect(await snapshot(w)).toEqual(before)
+  })
+  it('requires a target seat with the precondition and still refuses a revoked membership', async () => {
+    const w = await setup()
+    const withoutTable = await send(w, 'guest PATCH', { expectedTableId: null })
+    expect(withoutTable.statusCode, withoutTable.body).toBe(422)
+    const combined = await send(w, 'guest PATCH', { tableId: w.tableId, expectedTableId: null, plusOne: true })
+    expect(combined.statusCode, combined.body).toBe(422)
+    await app.db!.query('delete from wedding_members where wedding_id=$1 and user_id=$2', [w.weddingId, w.userId])
+    const refused = await send(w, 'guest PATCH', { tableId: w.tableId, expectedTableId: null })
+    expect(refused.statusCode, refused.body).toBe(404)
+    expect(refused.json().error.code).toBe('not_found')
+  })
   for (const change of changes.filter(item => ['session revoked', 'account deleted', 'member removed', 'role denied', 'consent withdrawn', 'consent outdated'].includes(item.name))) {
     it(`pins ${change.name} until the later guest wait and transaction finish`, async () => {
       const w = await setup()

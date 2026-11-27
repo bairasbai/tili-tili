@@ -1,4 +1,4 @@
-import { createElement, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createElement, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import { Download, Check, Copy, FileText, Plus, Armchair, Bus, Pencil, Trash2, RefreshCw } from 'lucide-react'
 import { contractTemplates } from '@/lib/contractTemplates'
@@ -35,7 +35,7 @@ import { getI18nLang, t } from '@/lib/i18n'
 import { formatWeddingDate } from '@/lib/weddingDate'
 import { useSeating, type SeatingRead } from '@/lib/useSeating'
 import { useRegisteredProgramNamespace } from '@/lib/offlineProgramHooks'
-import { offlineGeneration } from '@/lib/offlineAccess'
+import { offlineGeneration, onOfflineSeatingRefused } from '@/lib/offlineAccess'
 import { OwnedPdfButton } from '@/components/OwnedPdfButton'
 import { SeatingPdfButton } from '@/components/SeatingPdfButton'
 import { contractPdfBody } from '@/lib/documentPdf'
@@ -687,31 +687,86 @@ const DIET_ICON: Record<string, string> = {
   other: '🍽',
 }
 
+const TABLE_FULL_MESSAGE = 'Стол заполнен — выберите другой или добавьте стол'
+
 export function Seating() {
   const { weddingId } = useStore()
   const namespace = useRegisteredProgramNamespace()
-  return <SeatingReader key={JSON.stringify([weddingId, namespace])} weddingId={weddingId} />
+  const scope = useLegacySessionKey(JSON.stringify([weddingId, namespace]))
+  return <SeatingReader key={scope} weddingId={weddingId} scope={scope} />
 }
 
-function SeatingReader({ weddingId }: { weddingId: string | null }) {
+type SeatingAssignment = { guestId: string; tableId: string }
+type SeatingAttemptNotice = { saved: number; interrupted: boolean; error: unknown }
+
+function SeatingReader({ weddingId, scope }: { weddingId: string | null; scope: string }) {
   const { q, copy, live, online, refusal } = useSeating(weddingId)
-  // The editor unmounts during the access recheck. Restore focus after it returns.
-  const pendingFocusTable = useRef<string | null>(null)
-  useLayoutEffect(() => {
-    if (!online || refusal || q.error || q.forbidden) {
-      pendingFocusTable.current = null
-      return
+  const captureAction = useLegacyActionScope(scope, weddingId)
+  const autoRunning = useRef(false)
+  const [previousAutoRead, setPreviousAutoRead] = useState<SeatingRead | null>(null)
+  const needsFreshRead = q.data === previousAutoRead
+  const [autoBusy, setAutoBusy] = useState(false)
+  const [autoNotice, setAutoNotice] = useState<SeatingAttemptNotice | null>(null)
+  const saveAssignments = async (assignments: SeatingAssignment[]) => {
+    if (!weddingId || !live || !q.data || needsFreshRead || !navigator.onLine || autoRunning.current || !assignments.length) return
+    const generation = q.data.generation
+    const action = captureAction()
+    if (!action.isCurrent() || generation !== offlineGeneration()) return
+
+    // A reader can remain mounted during disconnect or access refusal. A later
+    // successful response must never send the next guest under those conditions.
+    let disconnected = false
+    let refused = false
+    const disconnect = () => { disconnected = true }
+    window.addEventListener('offline', disconnect)
+    const stopRefusal = onOfflineSeatingRefused(weddingId, () => { refused = true })
+    const isInterrupted = () => disconnected || !navigator.onLine || generation !== offlineGeneration()
+    const assertCurrent = () => {
+      action.assertCurrent()
+      if (refused || isInterrupted()) throw new Error('Seating snapshot invalidated')
     }
-    if (!live || pendingFocusTable.current === null) return
-    const tableId = pendingFocusTable.current
-    pendingFocusTable.current = null
-    if (document.activeElement === document.body) document.getElementById(`seating-table-${tableId}`)?.focus()
-  }, [live, online, refusal, q.error, q.forbidden])
-  if (live && weddingId) return <SeatingEditor weddingId={weddingId} q={q}
-    focusTableAfterSave={id => { pendingFocusTable.current = id }} />
+
+    autoRunning.current = true
+    setAutoBusy(true)
+    setPreviousAutoRead(q.data)
+    setAutoNotice(null)
+    let saved = 0
+    try {
+      for (const { guestId, tableId } of assignments) {
+        await patchGuest(weddingId, guestId, { tableId, expectedTableId: null }, { assertCurrent })
+        saved++
+      }
+    } catch (error) {
+      if (!refused && action.isCurrent()) {
+        setAutoNotice({ saved, interrupted: isInterrupted(), error })
+      }
+    } finally {
+      stopRefusal()
+      window.removeEventListener('offline', disconnect)
+      autoRunning.current = false
+      if (action.isCurrent()) {
+        if (!refused && navigator.onLine) q.reload()
+        setAutoBusy(false)
+      }
+    }
+  }
+
+  const denied = refusal || q.forbidden || (q.failure && [401, 403, 404, 410].includes(q.failure.status))
+  const failureDetail = autoNotice && !autoNotice.interrupted && (
+    autoNotice.error instanceof ApiError && autoNotice.error.code === 'table_full'
+      ? t(TABLE_FULL_MESSAGE) : explainError(autoNotice.error)
+  )
+  const notice = !denied && autoNotice && <p role="alert" className="px-5 mt-3 text-[12px] text-[var(--rose-ink)]">
+    {autoNotice.saved > 0 && t(q.refreshing
+      ? 'Часть гостей уже рассажена. Список обновляется — проверьте места перед повтором.'
+      : 'Часть гостей уже рассажена. Проверьте места перед повтором.')}
+    {autoNotice.saved === 0 && autoNotice.interrupted && t('Автоматическая рассадка прервана. Проверьте места перед повтором.')}
+    {failureDetail && `${autoNotice.saved > 0 ? ' ' : ''}${failureDetail}`}
+  </p>
   const attending = copy?.guests.filter(g => g.status !== 'no') ?? []
-  return <div className="pb-28" onFocusCapture={() => { pendingFocusTable.current = null }}>
+  const fallback = (onFocus?: () => void) => <div className="pb-28" onFocusCapture={onFocus}>
     <TopBar back title={t('Рассадка')} />
+    {notice}
     {refusal ? <p role="alert" className="px-5 py-4 text-[12px]">{explainError(refusal)}</p> : <AsyncState q={q} />}
     {!refusal && copy && <div className="px-5 space-y-4">
       <div role="status" className="py-3 border-b border-[var(--line)] text-[12px] leading-relaxed">
@@ -741,16 +796,40 @@ function SeatingReader({ weddingId }: { weddingId: string | null }) {
     {!refusal && !copy && !online && <p className="px-5 py-3 text-[12px]">{t('Сохранённой рассадки для этой сессии и свадьбы нет')}</p>}
     {!refusal && online && !q.loading && !q.refreshing && !q.error && !q.forbidden && !live && <button onClick={q.reload} aria-label={t('Перечитать рассадку')} title={t('Перечитать рассадку')} className="mx-5 h-11 w-11 flex items-center justify-center"><RefreshCw size={18} /></button>}
   </div>
+  if (!weddingId || !online || denied) return fallback()
+  // Keep same-session edits in memory while seating and access are refreshed.
+  return <SeatingEditor weddingId={weddingId} q={q} live={live} fallback={fallback} captureAction={captureAction}
+    autoBusy={autoBusy} autoBlocked={needsFreshRead} autoNotice={notice} saveAssignments={saveAssignments}
+    clearAutoNotice={() => setAutoNotice(null)} />
 }
 
-function SeatingEditor({ weddingId, q, focusTableAfterSave }: {
+function SeatingEditor({ weddingId, q, live, fallback, captureAction, autoBusy, autoBlocked, autoNotice, saveAssignments, clearAutoNotice }: {
   weddingId: string
   q: AsyncData<SeatingRead>
-  focusTableAfterSave: (tableId: string) => void
+  live: boolean
+  fallback: (onFocus?: () => void) => ReactNode
+  captureAction: ReturnType<typeof useLegacyActionScope>
+  autoBusy: boolean
+  autoBlocked: boolean
+  autoNotice: ReactNode
+  saveAssignments: (assignments: SeatingAssignment[]) => Promise<void>
+  clearAutoNotice: () => void
 }) {
   const [selected, setSelected] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
+  const [manualBusy, setBusy] = useState(false)
+  const busy = manualBusy || autoBusy
   const [err, setErr] = useState<string | null>(null)
+  const pendingFocus = useRef<{ preferred: string; fallback: string } | null>(null)
+  useLayoutEffect(() => {
+    if (!live || busy || !pendingFocus.current) return
+    const target = pendingFocus.current
+    pendingFocus.current = null
+    if (document.activeElement !== document.body) return
+    const preferred = document.getElementById(target.preferred)
+    const alternate = document.getElementById(target.fallback) ?? document.getElementById('seating-unassigned')
+    const element = preferred && !(preferred instanceof HTMLButtonElement && preferred.disabled) ? preferred : alternate
+    element?.focus()
+  }, [live, busy, q.data])
 
   const guestsQ = { ...q, data: q.data?.guests ?? null }
   const tablesQ = { ...q, data: q.data?.tables ?? null }
@@ -765,49 +844,72 @@ function SeatingEditor({ weddingId, q, focusTableAfterSave }: {
 
   const tables = (tablesQ.data ?? []).map(tb => {
     const guests = attending.filter(g => g.tableId === tb.id)
+    const capacity = tb.capacity ?? 8
+    const seated = guests.reduce((a, g) => a + g.persons, 0)
     return {
       id: tb.id ?? '',
       name: tb.name ?? '',
-      capacity: tb.capacity ?? 8,
+      capacity,
       guests,
-      seated: guests.reduce((a, g) => a + g.persons, 0),
+      seated,
+      available: capacity - seated,
     }
   })
   const unseated = attending.filter(g => !g.tableId)
-  const selectedGuest = attending.find(g => g.id === selected)
+  const autoDisabled = busy || autoBlocked || !unseated.length || !tables.some(tb => tb.available > 0)
+  const selectedGuest = unseated.find(g => g.id === selected)
+  if (live && selected && !selectedGuest) setSelected(null)
   /* One selected person occupies one seat. */
-  const fits = (tb: { seated: number; capacity: number }) => !!selectedGuest && tb.seated + selectedGuest.persons <= tb.capacity
+  const fits = (tb: { available: number }) => !!selectedGuest && selectedGuest.persons <= tb.available
 
-  const write = async (fn: () => Promise<unknown>, onFailure: (e: unknown) => void = e => setErr(explainError(e))) => {
+  const write = async (fn: (assertCurrent: () => void) => Promise<unknown>, onFailure: (e: unknown) => void = e => setErr(explainError(e))) => {
     /* Без свадьбы записывать некуда. Молчаливый выход отсюда читается как
        поломка: кнопка нажимается и ничего не происходит. */
     if (!weddingId) { setErr(t('Сначала создайте свадьбу — рассадка живёт в ней')); return }
-    if (busy || !navigator.onLine || q.refreshing || q.loading) return
+    if (busy || !live || !navigator.onLine) return
+    const action = captureAction()
+    if (!action.isCurrent()) return
     setBusy(true)
     setErr(null)
-    try { await fn(); q.reload() } catch (e) {
-      onFailure(e)
-      if (e instanceof ApiError && e.isDown) q.reload()
-    } finally { setBusy(false) }
+    clearAutoNotice()
+    try {
+      await fn(action.assertCurrent)
+      if (action.isCurrent()) q.reload()
+    } catch (e) {
+      if (action.isCurrent()) {
+        onFailure(e)
+        if (e instanceof ApiError && (e.isDown || e.code === 'seating_changed')) q.reload()
+      }
+    } finally {
+      if (action.isCurrent()) setBusy(false)
+    }
   }
-  const seat = (tableId: string, keyboardButton?: HTMLButtonElement) => {
+  const seat = (tableId: string, trigger?: HTMLButtonElement) => {
     const tb = tables.find(x => x.id === tableId)
     if (!selectedGuest || !tb || busy) return
-    const fullMessage = `${tb.name} · ${t('Стол заполнен — выберите другой или добавьте стол')}`
+    const fullMessage = `${tb.name} · ${t(TABLE_FULL_MESSAGE)}`
     /* Второе устройство может занять последнее место после чтения списка. */
     if (!fits(tb)) { setErr(fullMessage); return }
     void write(
-      async () => {
-        await patchGuest(weddingId!, selectedGuest.id, { tableId })
-        if (keyboardButton === document.activeElement) focusTableAfterSave(tableId)
+      async assertCurrent => {
+        await patchGuest(weddingId, selectedGuest.id, { tableId, expectedTableId: null }, { assertCurrent })
+        if (trigger === document.activeElement) {
+          pendingFocus.current = { preferred: `seating-table-${tableId}`, fallback: 'seating-unassigned' }
+        }
         setSelected(null)
       },
-      error => setErr(error instanceof ApiError && error.code === 'table_full' ? fullMessage : explainError(error)),
+      error => {
+        setErr(error instanceof ApiError && error.code === 'table_full' ? fullMessage : explainError(error))
+        if (trigger === document.activeElement) {
+          pendingFocus.current = { preferred: `seating-choose-${tableId}`, fallback: `seating-table-${tableId}` }
+        }
+      },
     )
   }
   /* Снятие со стола шлёт именно `null`: пропущенное поле сервер читает как
      «не трогать», и гость остался бы сидеть там, откуда его убрали. */
-  const unseat = (guestId: string) => void write(() => patchGuest(weddingId!, guestId, { tableId: null }))
+  const unseat = (guestId: string, tableId: string) => void write(assertCurrent =>
+    patchGuest(weddingId, guestId, { tableId: null, expectedTableId: tableId }, { assertCurrent }))
 
   const addNewTable = () => void write(() => addTable(weddingId!, `${t('Стол №')}${tables.length + 1}`, 8))
 
@@ -844,20 +946,26 @@ function SeatingEditor({ weddingId, q, focusTableAfterSave }: {
   })
 
   /* Each mutation addresses one explicit person; never queue offline writes. */
-  const autoSeat = () => void write(async () => {
-    const free = tables.map(tb => ({ id: tb.id, left: tb.capacity - tb.seated }))
+  const autoSeat = (trigger: HTMLButtonElement) => {
+    if (autoDisabled) return
+    const free = tables.map(tb => ({ id: tb.id, left: tb.available }))
+    const assignments: SeatingAssignment[] = []
     for (const g of unseated) {
-      if (!navigator.onLine || q.data?.generation !== offlineGeneration()) break
       const spot = free.find(f => f.left >= g.persons)
       if (!spot) continue
-      await patchGuest(weddingId!, g.id, { tableId: spot.id })
+      assignments.push({ guestId: g.id, tableId: spot.id })
       spot.left -= g.persons
     }
-    setSelected(null)
-  })
+    if (document.activeElement === trigger) {
+      pendingFocus.current = { preferred: 'seating-auto', fallback: 'seating-unassigned' }
+    }
+    setErr(null)
+    void saveAssignments(assignments)
+  }
 
   const selectedName = selectedGuest?.name
 
+  if (!live) return fallback(() => { pendingFocus.current = null })
   return (
     <div className="pb-28">
       <TopBar back title={t('Рассадка')} sub={selectedName ? `${t('Сажаем: ')}${selectedName}${t(' — выберите стол')}` : t('Выберите гостя, затем стол')} />
@@ -867,14 +975,20 @@ function SeatingEditor({ weddingId, q, focusTableAfterSave }: {
       {ready(guestsQ) && <AsyncState q={tablesQ} />}
       <div className="px-5 mt-3">
         <div className="px-1 py-3 flex flex-wrap items-center gap-2 border-b border-[var(--line)]">
-          <span className="text-[10px] tracking-[.14em] uppercase text-[var(--soft)] font-semibold shrink-0">{t('Без стола:')}</span>
+          <h2 id="seating-unassigned" tabIndex={-1} className="text-[10px] tracking-[.14em] uppercase text-[var(--soft)] font-semibold shrink-0 focus-visible:outline-2">{t('Без стола:')}</h2>
           {unseated.map(g => (
-            <button key={g.id} onClick={() => setSelected(s => s === g.id ? null : g.id)} className={cn('press text-[12px] font-medium px-3 py-2 rounded-lg max-w-full break-words text-left transition-all', selected === g.id ? 'grad text-[var(--on-grad)]' : 'bg-[var(--card)]')}>{g.name}</button>
+            <button key={g.id} type="button" aria-pressed={selected === g.id} disabled={busy}
+              onClick={() => setSelected(s => s === g.id ? null : g.id)}
+              className={cn('press text-[12px] font-medium px-3 py-2 rounded-lg max-w-full break-words text-left transition-all disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--rose-ink)]', selected === g.id ? 'grad text-[var(--on-grad)]' : 'bg-[var(--card)]')}>
+              {g.name}
+            </button>
           ))}
           {/* «все рассажены» и «гостей пока нет» — только по пришедшему списку. */}
           {!unseated.length && <span className="text-[10.5px] text-[var(--sage-deep)] font-semibold">{!ready(guestsQ) ? '—' : attending.length ? t('все рассажены ✓') : t('гостей пока нет')}</span>}
         </div>
       </div>
+      <p role="status" className="px-5 text-[12px] text-[var(--soft)]">{busy && t('Сохраняем рассадку…')}</p>
+      {autoNotice}
       {err && <p role="alert" className="px-5 mt-3 text-[12px] text-[var(--rose-ink)]">{err}</p>}
       {/* Состав столов и «N/M» — только по пришедшему списку гостей (ревью
           D3-12): пока он грузится или упал, «0/8» и «Пусто» под честным
@@ -902,10 +1016,10 @@ function SeatingEditor({ weddingId, q, focusTableAfterSave }: {
                 <h2 id={`seating-table-${tb.id}`} tabIndex={-1} aria-label={tb.name}
                   className="font-serif-d text-[16px] font-bold break-words focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--rose-ink)]">
                   {selectedGuest ? (
-                    <button type="button" aria-disabled={busy}
+                    <button id={`seating-choose-${tb.id}`} type="button" aria-disabled={busy}
                       className="press block max-w-full text-left break-words aria-disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--rose-ink)]"
                       aria-label={`${t('Посадить за стол')} ${tb.name}`}
-                      onClick={e => { e.stopPropagation(); seat(tb.id, e.detail === 0 ? e.currentTarget : undefined) }}>{tb.name}</button>
+                      onClick={e => { e.stopPropagation(); seat(tb.id, e.currentTarget) }}>{tb.name}</button>
                   ) : tb.name}
                 </h2>
                 <div className="flex items-center gap-1.5 min-h-9">
@@ -922,7 +1036,7 @@ function SeatingEditor({ weddingId, q, focusTableAfterSave }: {
             )}
             <div className="mt-2.5 space-y-1.5 min-h-[60px]">
               {tb.guests.length ? tb.guests.map(g => (
-                <button key={g.id} disabled={busy} onClick={e => { e.stopPropagation(); unseat(g.id) }} className="press w-full text-left text-[12px] bg-[var(--bg)] rounded-lg px-2.5 py-2 flex items-center gap-1.5 disabled:opacity-50">
+                <button key={g.id} disabled={busy} onClick={e => { e.stopPropagation(); unseat(g.id, tb.id) }} className="press w-full text-left text-[12px] bg-[var(--bg)] rounded-lg px-2.5 py-2 flex items-center gap-1.5 disabled:opacity-50">
                   {g.diet && <span className="text-[10px] shrink-0">{DIET_ICON[g.diet] ?? '🍽'}</span>}
                   <span className="min-w-0 break-words">{g.name}</span>
                 </button>
@@ -934,7 +1048,7 @@ function SeatingEditor({ weddingId, q, focusTableAfterSave }: {
       </div>
       )}
       <div className="px-5 mt-4 space-y-3">
-        <button onClick={autoSeat} disabled={busy || !unseated.length || !tables.length} className={cn('press w-full h-[52px] rounded-full grad text-[var(--on-grad)] font-semibold text-[13.5px] flex items-center justify-center gap-2', (busy || !unseated.length || !tables.length) && 'opacity-40')} style={{ boxShadow: 'var(--shadow-lift)' }}>✨ {t('Рассадить автоматически')}</button>
+        <button id="seating-auto" type="button" onClick={e => autoSeat(e.currentTarget)} disabled={autoDisabled} className="press w-full h-[52px] rounded-full grad text-[var(--on-grad)] font-semibold text-[13.5px] flex items-center justify-center gap-2 disabled:opacity-40" style={{ boxShadow: 'var(--shadow-lift)' }}>✨ {t('Рассадить автоматически')}</button>
         {/* Легенда описывает то, что гость сам указал в RSVP. Прежняя обещала
             «из опроса меню» три значка, которые выдавались хешем имени. */}
         <div className="px-1 py-3 flex flex-wrap items-center gap-3 text-[10.5px] text-[var(--soft)] border-t border-[var(--line)]">
