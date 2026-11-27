@@ -1876,7 +1876,7 @@ async function withHistoricalMoveCancelRuntime(action, { sourceAdmissionOnly = f
   const targetReal = realpathSync(modules)
   const base = repositoryCi ? process.env.RUNNER_TEMP
     : backend.replaceAll('\\', '/') === 'C:/Тили-тили/wt/wp11-manual-20261120/Тили-тили/backend'
-      ? resolve(backend, '../../../../.unlazy/wp11-sber-20261120/checks-manual-compat')
+      ? resolve(backend, '../../../../.unlazy')
     : backend.replaceAll('\\', '/') === 'C:/Тили-тили/wp04-full-audit22-fixes-20261104/Тили-тили/backend'
       ? resolve(backend,'../../../.unlazy/fix-full-audit22-20261104/tmp')
       : resolve(backend,'../../../.unlazy/wp04-calendar-consents-20261025')
