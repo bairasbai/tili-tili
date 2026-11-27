@@ -1,6 +1,6 @@
 {
-  "name": "Тили-тили — свадьба в одном приложении",
-  "short_name": "Тили-тили",
+  "name": "Tili-Tili",
+  "short_name": "Tili-Tili",
   "description": "Планирование свадьбы: команда, бюджет, гости, день X",
   "lang": "ru",
   "start_url": "./",
@@ -11,16 +11,22 @@
   "theme_color": "#FBF6F1",
   "icons": [
     {
-      "src": "./icon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
+      "src": "./icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
       "purpose": "any"
     },
     {
       "src": "./icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "./icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ]
 }

@@ -4,7 +4,7 @@ import { projectFile } from '@/test/projectFiles'
 const html = projectFile('index.html')
 const shellFiles = [
   ['manifest', 'manifest.webmanifest'],
-  ['icon', 'icon.svg'],
+  ['icon', 'icon-192.png'],
   ['apple-touch-icon', 'icon-512.png'],
 ] as const
 let originalHead: string

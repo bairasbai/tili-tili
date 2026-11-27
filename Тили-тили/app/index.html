@@ -49,9 +49,7 @@
           if (shellRoot.origin === window.location.origin) {
             var template = document.createElement('template')
             template.innerHTML = '<link rel="manifest" href="./manifest.webmanifest">' +
-              '<link rel="icon" type="image/svg+xml" href="./icon.svg">' +
-              /* iOS не понимает SVG в apple-touch-icon: без PNG на «экране Домой»
-                 стоял бы серый квадрат со скриншотом (аудит 2026-09-07, блок 9). */
+              '<link rel="icon" type="image/png" href="./icon-192.png">' +
               '<link rel="apple-touch-icon" href="./icon-512.png">'
             template.content.querySelectorAll('link').forEach(function (link) {
               link.href = new URL(link.getAttribute('href'), shellRoot).href
@@ -73,12 +71,12 @@
     </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#FBF6F1" />
-    <meta name="description" content="Тили-тили — вся свадьба в одном приложении" />
+    <meta name="description" content="Tili-Tili — вся свадьба в одном приложении" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-    <meta name="apple-mobile-web-app-title" content="Тили-тили" />
-    <title>Тили-тили — свадьба в одном приложении</title>
+    <meta name="apple-mobile-web-app-title" content="Tili-Tili" />
+    <title>Tili-Tili — свадьба в одном приложении</title>
   </head>
   <body>
     <div id="root"></div>

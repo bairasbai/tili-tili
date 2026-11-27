@@ -90,6 +90,8 @@ describe('service worker кэширует только сборку и обол�
     const at = staticRule('https://host.example/app/')
     expect(at('/app/assets/index-a1.js')).toBe(true)
     expect(at('/app/icon.svg')).toBe(true)
+    const manifest = JSON.parse(projectFile('public/manifest.webmanifest')) as { icons: { src: string }[] }
+    for (const { src } of manifest.icons) expect(at(src), `иконка установки ${src} вне кэша`).toBe(true)
     expect(at('/assets/index-a1.js'), 'корень хостинга — не наша сборка').toBe(false)
     expect(at('/app/photos/1.jpg')).toBe(false)
   })

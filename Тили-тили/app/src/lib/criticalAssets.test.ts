@@ -80,7 +80,12 @@ describe('service worker installation uses complete validated static-only precac
   it('consumes response bodies before awaiting every header, even with bounded concurrent network streams', async () => {
     const result = await install('streams')
     expect(result.error).toBe(false); expect(result.skipped).toBe(true)
-    expect(result.stored).toHaveLength(5)
+    const shell = [
+      './', './index.html', './manifest.webmanifest',
+      './icon-192.png', './icon-512.png', './icon-maskable-512.png', './icon.svg',
+      './assets/critical.js',
+    ]
+    expect(result.stored).toEqual(shell.map(file => new URL(file, 'https://example.test/app/').href))
   })
   it('does not force a new worker onto an existing client before explicit upgrade', async () => {
     const result = await install(null, true)

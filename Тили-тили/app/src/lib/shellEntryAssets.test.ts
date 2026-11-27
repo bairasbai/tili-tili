@@ -126,7 +126,7 @@ describe('compiled shell entry is inert until canonical parser insertion', () =>
     expect(module.getAttribute('crossorigin')).toBe('')
     expect(result.writes[0].indexOf('rel="stylesheet"')).toBeLessThan(result.writes[0].indexOf('type="module"'))
     expect(document.querySelector('base')).toBeNull()
-    for (const [rel, file] of [['manifest', 'manifest.webmanifest'], ['icon', 'icon.svg'], ['apple-touch-icon', 'icon-512.png']]) {
+    for (const [rel, file] of [['manifest', 'manifest.webmanifest'], ['icon', 'icon-192.png'], ['apple-touch-icon', 'icon-512.png']]) {
       const links = document.head.querySelectorAll<HTMLLinkElement>(`link[rel="${rel}"]`)
       expect(links).toHaveLength(1)
       expect(links[0].getAttribute('href')).toBe(location.origin + root + file)
