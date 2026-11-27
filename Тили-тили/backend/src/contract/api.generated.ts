@@ -4088,7 +4088,7 @@ export interface paths {
                         "application/json": components["schemas"]["Error"];
                     };
                 };
-                /** @description Передан expectedTableId без tableId, вместе с другой правкой гостя или тело не прошло проверку */
+                /** @description `seating_precondition_invalid` — `expectedTableId` передан без `tableId` или вместе с другой правкой гостя. `validation_failed` — тело запроса не прошло проверку схемы или передан нераспознанный номер телефона. */
                 422: {
                     headers: {
                         [name: string]: unknown;
