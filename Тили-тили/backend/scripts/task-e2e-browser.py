@@ -527,6 +527,8 @@ with sync_playwright() as p:
                                   'Название мероприятия','Сохранить','Открыть свежую версию','Перед повторным изменением откройте свежую версию')
             verify_event_keyboard(guest,'en','Open the invitation','Open programme','Edit event',
                                   'Event name','Save','Open fresh version','Open a fresh version before making another change')
+            stored_guest_programmes="""() => Object.entries(localStorage)
+                .filter(([key]) => key.startsWith('tt_guest_event_offline:')).map(([, value]) => value)"""
             with browser.new_context(viewport={'width':390,'height':844}) as guest_context:
                 guest_context.add_init_script("localStorage.setItem('tt_guest_token', %s)"%json.dumps(guest['guestToken']))
                 programme=guest_context.new_page()
@@ -540,7 +542,7 @@ with sync_playwright() as p:
                 programme_block=programme.get_by_text(guest['programmeName'],exact=True)
                 expect(programme_block).to_be_visible()
                 expect(programme.get_by_text('Внутренний блок SC-017',exact=True)).to_have_count(0)
-                programme.wait_for_function("localStorage.getItem('tt_guest_event_offline') !== null")
+                programme.wait_for_function("name => ("+stored_guest_programmes+")().some(value => value.includes(name))",arg=guest['programmeName'])
                 roster='http://127.0.0.1:3001/weddings/'+guest['weddingId']+'/events/'+guest['eventId']+'/invitations'
                 headers={'Authorization':'Bearer '+guest['owner']['accessToken']}
                 current=owner.request.get(roster,headers=headers)
@@ -552,8 +554,72 @@ with sync_playwright() as p:
                 assert programme_refused.value.status==404
                 expect(programme.get_by_role('alert')).to_be_visible()
                 expect(programme_block).to_have_count(0)
-                programme.wait_for_function("localStorage.getItem('tt_guest_event_offline') === null")
+                programme.wait_for_function("() => ("+stored_guest_programmes+")().length === 0")
             results.append('guest-selected-programme-rechecked-and-forgotten-after-invitation-revocation')
+            with browser.new_context(viewport={'width':390,'height':844}) as guest_context:
+                guest_context.add_init_script("localStorage.setItem('tt_guest_token', %s)"%json.dumps(guest['guestToken']))
+                current=owner.request.get(roster,headers=headers)
+                assert current.status==200
+                restored=owner.request.put(roster,headers={**headers,'If-Match':current.headers['etag']},data={'guestIds':[guest['guestId']]})
+                assert restored.status==200
+                sibling_query='?eventId='+guest['siblingEventId']+'&guestId='+guest['guestId']
+                late=guest_context.new_page()
+                witness=guest_context.new_page()
+                sibling=guest_context.new_page()
+                for guest_tab in (late,witness,sibling):
+                    guest_tab.on('pageerror',lambda e:errors.append(type(e).__name__))
+                sibling.goto('http://127.0.0.1:3000/invite'+sibling_query)
+                expect(sibling.get_by_text(guest['siblingProgrammeName'],exact=True)).to_be_visible()
+                sibling.wait_for_function("name => ("+stored_guest_programmes+")().some(value => value.includes(name))",arg=guest['siblingProgrammeName'])
+                late.add_init_script("""(() => {
+                    const name = %s;
+                    window.revokedProgrammeReappeared = false;
+                    new MutationObserver(() => {
+                      if (document.body?.textContent.includes(name)) window.revokedProgrammeReappeared = true;
+                    }).observe(document, {subtree:true, childList:true, characterData:true});
+                    const save = Storage.prototype.setItem;
+                    Storage.prototype.setItem = function(key, value) {
+                      if (key.startsWith('tt_guest_event_offline:') && String(value).includes(name)) window.revokedProgrammeReappeared = true;
+                      return save.call(this, key, value);
+                    };
+                })();"""%json.dumps(guest['programmeName']))
+                old=owner.request.get('http://127.0.0.1:3001/join/'+guest['guestToken']+'/day'+selected)
+                assert old.status==200
+                held=[]
+                def hold_valid_programme(route):
+                    if held:
+                        route.continue_()
+                        return
+                    held.append(route)
+                    late.evaluate("window.initialGuestRequestHeld = true")
+                late.route(re.compile(re.escape('/day'+selected)+'$'),hold_valid_programme)
+                with late.expect_request(lambda request: request.url.endswith('/day'+selected)):
+                    late.goto('http://127.0.0.1:3000/invite'+selected,wait_until='domcontentloaded')
+                late.wait_for_function("window.initialGuestRequestHeld === true")
+                current=owner.request.get(roster,headers=headers)
+                assert current.status==200
+                removed=owner.request.put(roster,headers={**headers,'If-Match':current.headers['etag']},data={'guestIds':[]})
+                assert removed.status==200
+                with witness.expect_response(guest_read) as refusal:
+                    witness.goto('http://127.0.0.1:3000/invite'+selected)
+                assert refusal.value.status==404
+                expect(witness.get_by_role('alert')).to_be_visible()
+                with late.expect_response(lambda response: guest_read(response) and response.status==200):
+                    held[0].fulfill(response=old)
+                expect(late.get_by_role('alert')).to_be_visible()
+                assert late.evaluate('window.revokedProgrammeReappeared') is False
+                expect(late.get_by_text(guest['programmeName'],exact=True)).to_have_count(0)
+                saved='\n'.join(late.evaluate(stored_guest_programmes))
+                assert guest['programmeName'] not in saved and guest['siblingProgrammeName'] in saved
+                expect(sibling.get_by_text(guest['siblingProgrammeName'],exact=True)).to_be_visible()
+                current=owner.request.get(roster,headers=headers)
+                assert current.status==200
+                restored=owner.request.put(roster,headers={**headers,'If-Match':current.headers['etag']},data={'guestIds':[guest['guestId']]})
+                assert restored.status==200
+                with witness.expect_response(lambda response: guest_read(response) and response.status==200):
+                    witness.get_by_role('button',name='Повторить').click()
+                expect(witness.get_by_text(guest['programmeName'],exact=True)).to_be_visible()
+            results.append('guest-late-200-after-revocation-in-other-tab-preserves-sibling-programme')
             staff=fixture['staff']
             with browser.new_context(viewport={'width':390,'height':844}) as staff_context:
                 staff_context.add_init_script("""(() => {

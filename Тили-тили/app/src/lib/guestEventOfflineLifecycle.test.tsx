@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 import { webcrypto } from 'node:crypto'
+import { guestEventStorageText } from '../test/guestEventStorage'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes, useNavigate } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import Invite from '@/pages/Invite'
 import { saveTokens } from './api/client'
 import { getGuestEventDaySnapshot, saveGuestToken } from './api/guest'
-import { GUEST_EVENT_OFFLINE_KEY, forgetGuestDay, guestEventReadTicket, recallGuestEvent, rememberGuestEvent, selectGuestEvent } from './guestDayOffline'
+import { guestEventCopyKeys, forgetGuestDay, guestEventReadTicket, recallGuestEvent, rememberGuestEvent, selectGuestEvent } from './guestDayOffline'
 import { setI18nLang } from './i18n'
 
 const TOKEN = 'PRIVATE-GUEST-TOKEN'
@@ -65,7 +66,7 @@ function Switcher() {
 const open = (entry = route(), controls = false) => render(<MemoryRouter initialEntries={[entry]}>
   {controls && <Switcher />}<Routes><Route path="/invite" element={<Invite />} /></Routes>
 </MemoryRouter>)
-async function warm() { open(); await screen.findByText(NAME); await waitFor(() => expect(localStorage.getItem(GUEST_EVENT_OFFLINE_KEY)).toContain(NAME)) }
+async function warm() { open(); await screen.findByText(NAME); await waitFor(() => expect(guestEventStorageText()).toContain(NAME)) }
 function readonlyCopy() {
   expect(screen.getByText(NAME)).toBeTruthy()
   expect(document.body.textContent).toContain('Офлайн-копия')
@@ -102,7 +103,7 @@ describe('selected invited person programme through real Invite and API client',
     expect(screen.getByText('2027-06-16T08:00:00.000Z')).toBeTruthy()
     control.offline(); cleanup(); const previous = control.calls.length; open()
     await screen.findByText(NAME); readonlyCopy(); expect(control.calls).toHaveLength(previous)
-    const raw = localStorage.getItem(GUEST_EVENT_OFFLINE_KEY)!
+    const raw = guestEventStorageText()!
     for (const forbidden of [TOKEN, selector.eventId, selector.guestId, 'PRIVATE PERSON', 'PRIVATE EVENT LOCATION']) expect(raw).not.toContain(forbidden)
   })
   it.each(['open', 'closed'] as const)('current invited person can open programme with declined RSVP and %s deadline', async deadline => {
@@ -135,7 +136,7 @@ describe('selected invited person programme through real Invite and API client',
     finish(json({ error: { code: 'gone', message: 'Guest link revoked' } }, 410))
     await screen.findByText('Ссылка больше не действует')
     expect(screen.queryByText(NAME)).toBeNull()
-    expect(localStorage.getItem(GUEST_EVENT_OFFLINE_KEY)).toBeNull()
+    expect(guestEventStorageText()).toBeNull()
     expect(control.calls.every(call => call.method === 'GET')).toBe(true)
   })
   it('a superseded focus read cannot replace the newer programme or cached copy', async () => {
@@ -151,16 +152,15 @@ describe('selected invited person programme through real Invite and API client',
     await screen.findByText('Newer checked programme')
     await act(async () => finish(json(day('Superseded programme'), 200, { etag: `"${SOURCE}"` })))
     expect(screen.queryByText('Superseded programme')).toBeNull()
-    expect(localStorage.getItem(GUEST_EVENT_OFFLINE_KEY)).toContain('Newer checked programme')
+    expect(guestEventStorageText()).toContain('Newer checked programme')
   })
   it.each([403, 404, 410])('selected%s withdraws copy, has no automatic retry loop, and cannot be restored cold', async status => {
     const control = serve(); await warm(); control.offline(); cleanup(); open(); await screen.findByText(NAME)
     control.status(status); const previous = control.calls.length; control.online()
     await screen.findByRole('alert')
     await waitFor(() => expect(screen.queryByText(NAME)).toBeNull())
-    await act(async () => { await Promise.resolve(); await Promise.resolve() })
     expect(control.calls).toHaveLength(previous + 1)
-    expect(localStorage.getItem(GUEST_EVENT_OFFLINE_KEY)).toBeNull()
+    expect(guestEventStorageText()).toBeNull()
     control.offline(); cleanup(); open(); expect(screen.queryByText(NAME)).toBeNull()
     expect(control.calls.every(call => call.method === 'GET')).toBe(true)
   })
@@ -174,7 +174,7 @@ describe('selected invited person programme through real Invite and API client',
     const control = serve(); await warm(); control.offline()
     await act(async () => saveGuestToken(action === 'replacement' ? 'OTHER' : null))
     await waitFor(() => expect(screen.queryByText(NAME)).toBeNull())
-    expect(localStorage.getItem(GUEST_EVENT_OFFLINE_KEY)).toBeNull()
+    expect(guestEventStorageText()).toBeNull()
     if (action === 'removal') expect(screen.getByText('Нужна ссылка из приглашения')).toBeTruthy()
   })
   it('selected route A→B→A never shows or caches an older pending200', async () => {
@@ -189,7 +189,7 @@ describe('selected invited person programme through real Invite and API client',
     await expect(getGuestEventDaySnapshot(TOKEN, selector)).rejects.toMatchObject({ status: 404 })
     await act(async () => finish(json(day('Old pending programme'), 200, { etag: `"${SOURCE}"` })))
     expect(screen.queryByText('Old pending programme')).toBeNull()
-    expect(localStorage.getItem(GUEST_EVENT_OFFLINE_KEY)).not.toContain('Old pending programme')
+    expect(guestEventStorageText()).not.toContain('Old pending programme')
     expect(await recallGuestEvent(guestEventReadTicket(TOKEN, other))).not.toBeNull()
   })
   it('a pending cold namespace cannot restore after route/person selection changes', async () => {
@@ -219,27 +219,28 @@ describe('selected invited person programme through real Invite and API client',
   it.each(['/invite?eventId=' + selector.eventId, '/invite?eventId=bad&guestId=' + selector.guestId, route() + '&guestId=' + selector.guestId])('invalid selector URL%s stays visible without HTTP or cache authority', async entry => {
     const control = serve(); open(entry)
     expect(screen.getByRole('alert').textContent).toContain('не выбраны корректно')
-    expect(control.calls).toHaveLength(0); expect(localStorage.getItem(GUEST_EVENT_OFFLINE_KEY)).toBeNull()
+    expect(control.calls).toHaveLength(0); expect(guestEventStorageText()).toBeNull()
   })
   it('missing crypto never restores an identity-bearing or raw-token fallback selected copy', async () => {
     vi.stubGlobal('crypto', undefined); const control = serve(); open(); await screen.findByText(NAME)
     control.offline(); cleanup(); open(); await screen.findByText('Нет связи. Сохранённой программы на этом устройстве нет.')
-    expect(localStorage.getItem(GUEST_EVENT_OFFLINE_KEY)).toBeNull()
+    expect(guestEventStorageText()).toBeNull()
     expect(screen.queryByText(NAME)).toBeNull()
   })
   it('confirmed cross-tab removal withdraws the rendered selected copy and fences re-entry', async () => {
     const control = serve(); await warm(); control.offline(); await screen.findByText('Офлайн-копия')
-    const oldValue = localStorage.getItem(GUEST_EVENT_OFFLINE_KEY)
-    localStorage.removeItem(GUEST_EVENT_OFFLINE_KEY)
-    fireEvent(window, new StorageEvent('storage', { key: GUEST_EVENT_OFFLINE_KEY, oldValue, newValue: null }))
+    const key = guestEventCopyKeys()[0]!, oldValue = localStorage.getItem(key)
+    localStorage.removeItem(key)
+    fireEvent(window, new StorageEvent('storage', { key, oldValue, newValue: null }))
     await waitFor(() => expect(screen.queryByText(NAME)).toBeNull())
-    expect(localStorage.getItem(GUEST_EVENT_OFFLINE_KEY)).toBeNull()
+    expect(guestEventStorageText()).toBeNull()
   })
   it('only allowed minimal data from an injected copy appears, never saved person identity', async () => {
     const control = serve()
     await rememberGuestEvent(guestEventReadTicket(TOKEN, selector), { ...day(), guestName: 'PRIVATE PERSON' }, `"${SOURCE}"`)
-    const raw = JSON.parse(localStorage.getItem(GUEST_EVENT_OFFLINE_KEY)!) as { entries: Record<string, unknown>[] }
-    raw.entries[0]!.guestName = 'PRIVATE PERSON'; localStorage.setItem(GUEST_EVENT_OFFLINE_KEY, JSON.stringify(raw))
+    const key = guestEventCopyKeys()[0]!
+    const raw = JSON.parse(localStorage.getItem(key)!) as Record<string, unknown>
+    raw.guestName = 'PRIVATE PERSON'; localStorage.setItem(key, JSON.stringify(raw))
     control.offline(); open(); await screen.findByText(NAME); readonlyCopy(); expect(control.calls).toHaveLength(0)
   })
 })
