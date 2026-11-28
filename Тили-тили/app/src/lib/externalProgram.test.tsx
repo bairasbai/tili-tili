@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes, useNavigate } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import GuestVendor from '@/pages/GuestVendor'
@@ -56,6 +56,64 @@ describe('external link actual API client and program UI', () => {
     expect(write.headers.get('If-Match')).toBe('"17"'); expect(write.headers.has('authorization')).toBe(false)
     expect(screen.getByRole('status').textContent).toContain(receipt.acknowledgedAt)
     expect(screen.queryByRole('checkbox')).toBeNull()
+  })
+  it.each([false, true])('keeps focus during confirmation and respects movement to chat (%s)', async movedFocus => {
+    let complete!: (reply: Reply) => void
+    const pending = new Promise<Reply>(resolve => { complete = resolve })
+    const calls = serve(c => c.path === ACK ? pending : { body: program(), etag: '"17"' })
+    view(); await screen.findByText('Permitted ceremony')
+    fireEvent.click(screen.getByRole('checkbox'))
+    const confirm = button('Подтвердить ознакомление')
+    confirm.focus()
+    fireEvent.click(confirm)
+    expect(document.activeElement).toBe(confirm)
+    expect(confirm.disabled).toBe(false)
+    expect(confirm.getAttribute('aria-disabled')).toBe('true')
+    fireEvent.click(confirm)
+    const chat = await screen.findByPlaceholderText('Сообщение…')
+    if (movedFocus) chat.focus()
+    complete({ body: receipt })
+    await screen.findByRole('status')
+    expect(document.activeElement).toBe(movedFocus ? chat : button('Открыть заново'))
+    expect(calls.filter(c => c.path === ACK)).toHaveLength(1)
+  })
+  it.each([
+    { status: 409, movedFocus: false },
+    { status: 409, movedFocus: true },
+    { status: 200, movedFocus: false },
+    { status: 200, movedFocus: true },
+  ])('respects focus when the proof expires during confirmation ($status, $movedFocus)', async ({ status, movedFocus }) => {
+    vi.useFakeTimers()
+    try {
+      let complete!: (reply: Reply) => void
+      const pending = new Promise<Reply>(resolve => { complete = resolve })
+      const expiresAt = new Date(Date.now() + 10_000).toISOString()
+      const read = { body: { ...program(), expiresAt }, etag: '"17"' }
+      serve(c => c.path === ACK ? pending : new Promise<Reply>(resolve => {
+        window.setTimeout(() => resolve(read), 30)
+      }))
+      view()
+      const checkbox = await vi.waitFor(() => screen.getByRole('checkbox'), { timeout: 3_000 })
+      fireEvent.click(checkbox)
+      const confirm = button('Подтвердить ознакомление')
+      confirm.focus()
+      fireEvent.click(confirm)
+      const chat = screen.getByPlaceholderText('Сообщение…')
+      if (movedFocus) chat.focus()
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(Date.parse(expiresAt) - Date.now() + 1) })
+      expect(screen.queryByRole('checkbox')).toBeNull()
+      expect(button('Открыть заново').disabled).toBe(true)
+
+      const result = status === 200 ? { body: receipt } : { status, body: { error: { code: 'timeline_version_conflict', message: 'stale' } } }
+      await act(async () => { complete(result) })
+      expect(screen.queryByRole('status')).toBeNull()
+      expect(screen.getByRole('alert')).toBeTruthy()
+      expect(button('Открыть заново').disabled).toBe(false)
+      expect(document.activeElement).toBe(movedFocus ? chat : button('Открыть заново'))
+    } finally {
+      vi.useRealTimers()
+    }
   })
   it.each(['network', '503'])('%s retry sends the identical captured proof without a new GET or fake receipt', async failure => {
     let writes = 0
