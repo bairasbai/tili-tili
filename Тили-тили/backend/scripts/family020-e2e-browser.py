@@ -148,7 +148,28 @@ localStorage.setItem('tt_wedding_date', JSON.stringify({json.dumps(fixture['date
             keyboard_page = keyboard.new_page()
             keyboard_page.on("pageerror", lambda exc: result["pageErrors"].append(f"keyboard: {exc}"))
             keyboard_page.goto(f"{BASE}/i/{code}", wait_until="domcontentloaded")
-            keyboard_page.get_by_role("button", name=invite, exact=True).press("Enter")
+            opener = keyboard_page.get_by_role("button", name=invite, exact=True)
+            expect(opener).to_be_visible(timeout=15_000)
+            ax = keyboard.new_cdp_session(keyboard_page)
+
+            def accessible_attending_buttons():
+                return sum(
+                    node.get("role", {}).get("value") == "button"
+                    and node.get("name", {}).get("value") == attending
+                    and not node["ignored"]
+                    for node in ax.send("Accessibility.getFullAXTree")["nodes"]
+                )
+
+            assert accessible_attending_buttons() == 0, f"covered RSVP in the accessibility tree ({lang})"
+            opener.focus()
+            keyboard_page.keyboard.press("Tab")
+            assert not keyboard_page.evaluate(
+                """() => document.activeElement.closest('#invite-story') !== null"""
+            ), f"focus entered the covered invitation story ({lang})"
+            opener.press("Enter")
+            expect(keyboard_page.get_by_role("heading", level=1)).to_be_focused()
+            assert accessible_attending_buttons() == 2, f"RSVP still excluded after opening ({lang})"
+            ax.detach()
             first = member_card(keyboard_page, PRIMARY)
             second = member_card(keyboard_page, SECOND)
             for width in (320, 390, 480):
