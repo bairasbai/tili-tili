@@ -87,6 +87,8 @@ describe.skipIf(!database)('SMS Aero login', () => {
     const app = await buildApp({
       env: 'test', databaseUrl: database!, redisUrl: null, sentryDsn: null,
       jwtAccessSecret: 'a'.repeat(48), jwtRefreshSecret: 'b'.repeat(48),
+      // Parallel suites share OTP history. The hourly caps are covered in audit12.test.ts.
+      otpMaxPerHourTotal: 1_000_000, otpMaxPerIpHour: 1_000_000,
       smsProvider: smsConfig.provider, smsAeroEmail: smsConfig.smsAeroEmail,
       smsAeroKey: smsConfig.smsAeroKey, smsAeroSign: smsConfig.smsAeroSign,
     })
