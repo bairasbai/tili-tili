@@ -32,6 +32,12 @@
 и передаётся в контейнер `api` через `env_file`. Обязательные параметры
 проверяются в [конфигурации сервера](Тили-тили/backend/src/config.ts).
 
+Параметры Compose `WEB_PORT`, `TRUST_PROXY` и `VITE_VAPID_PUBLIC_KEY`
+задавайте в окружении команды Compose.
+Для первого запуска профиля `localdb` с пустым томом задайте там же
+непустой `POSTGRES_PASSWORD`. Его проверяет контейнер PostgreSQL
+при инициализации.
+
 | Шаг | Переменные | Без них |
 |---|---|---|
 | **обязательно для запуска** | `NODE_ENV=production`, `DATABASE_URL`, `REDIS_URL` (в Compose задан), `JWT_ACCESS_SECRET` и `JWT_REFRESH_SECRET` (разные, ≥32 знаков), `CORS_ORIGINS` | сервер сообщает об отсутствующей настройке |
