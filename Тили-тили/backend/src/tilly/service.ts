@@ -3,7 +3,7 @@ import type { Db, Queryable } from '../plugins/db.js'
 import { uuidv7, isUuid } from '../ids.js'
 import { weddingContext } from './context.js'
 import { tillySystemPrompt } from './prompt.js'
-import type { TillyConfig, TillyMessage, TillyModel } from './model.js'
+import { tillyFailureLogFields, type TillyConfig, type TillyMessage, type TillyModel } from './model.js'
 import { parseTillyReply, publicTillyAction, storeTillyActions, type TillyProposal } from './actions.js'
 
 /*
@@ -179,8 +179,10 @@ export class TillyService {
         usage = answer.usage
         model = answer.model
       } catch (err) {
-        /* Ключ и адрес провайдера в лог не попадают: тут только ошибка и модель. */
-        this.app.log.error({ err, opsIntegration: 'tilly', provider: this.model.provider, model: this.model.model }, 'Тиль: модель не ответила')
+        this.app.log.error(
+          { opsIntegration: 'tilly', provider: this.model.provider, model: this.model.model, ...tillyFailureLogFields(err) },
+          'Тиль: модель не ответила',
+        )
       } finally {
         this.inflight.delete(controller)
       }
