@@ -409,7 +409,7 @@ input[type="range"] { accent-color: var(--rose-deep); }
 @media (prefers-reduced-motion: reduce) {
   .rv, .rv-scale, .rv-left, .rv-right { opacity: 1; transform: none; transition: none; }
   .floaty, .floaty-slow, .shimmer-text, .grad-anim, .sheen::after, .halo::before, .skeleton,
-  .fade-up, .pop { animation: none; }
+  .fade-up, .fade-in, .pop { animation: none; }
   .sheen::after, .halo::before { display: none; }
 }
 

@@ -148,7 +148,14 @@ def verify_coordinator(browser, lang, errors):
         expect(code_field).to_have_value(re.compile(r'^[0-9a-f-]{36}$'))
         employee_code = code_field.input_value()
 
+        coordinator.emulate_media(reduced_motion='reduce')
         coordinator.goto(UI + '/wedding/task-delegations')
+        heading = coordinator.get_by_role('heading', name='Поручения' if lang == 'ru' else 'Delegated tasks', exact=True)
+        expect(heading).to_be_visible()
+        animation = "(heading) => getComputedStyle(heading.closest('.fade-in')).animationName"
+        assert heading.evaluate(animation) == 'none'
+        coordinator.emulate_media(reduced_motion='no-preference')
+        assert heading.evaluate(animation) == 'fadeIn'
         picker = coordinator.get_by_role('combobox', name=labels['wedding'])
         task_select = coordinator.get_by_role('combobox', name=selector)
 
