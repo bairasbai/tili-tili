@@ -192,7 +192,7 @@ export function normalizedPhoneOr422(raw: string | undefined): string | null | u
   return phone
 }
 
-/** Сколько SMS уходит за одно нажатие «Напомнить»: список гостей не ограничен, а SMS — деньги. */
+/** Максимум попыток отправки за одно нажатие «Напомнить». */
 export const REMIND_MAX_PER_CALL = 300
 
 /** Текст напоминания: имя гостя — одной строкой и коротко, оно набрано парой, а не нами. */
@@ -950,13 +950,12 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
       return { pending, stamp: claimed.rows[0]!.stamp }
     })
 
+    let attempted = 0
     let sent = 0
     let skippedNoPhone = 0
     let skippedLinkUsed = 0
     let failed = 0
-    /* Предел на одну рассылку: список гостей не ограничен, а SMS — наши
-     * деньги на чужие номера (ревью 015). Сверх предела — не шлём, и в ответе
-     * это видно как `failed`; на следующие сутки очередь дойдёт до остальных. */
+    // Считаем обращения к шлюзу: при потере ответа отправка могла начаться.
     for (const guest of reservation.pending) {
       if (!guest.phone) {
         skippedNoPhone++
@@ -968,10 +967,11 @@ export async function guestRoutes(app: FastifyInstance): Promise<void> {
         skippedLinkUsed++
         continue
       }
-      if (sent >= REMIND_MAX_PER_CALL) {
+      if (attempted >= REMIND_MAX_PER_CALL) {
         failed++
         continue
       }
+      attempted++
       try {
         await app.sms.send(guest.phone, remindText(guest.name, guest.code))
         sent++

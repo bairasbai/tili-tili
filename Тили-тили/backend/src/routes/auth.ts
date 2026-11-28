@@ -290,12 +290,12 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
 
       try {
         await app.sms.send(phone, codeMessage(code))
-      } catch (error) {
+      } catch {
         /* SMS не ушла — строки кода быть не должно: иначе отказ провайдера
          * считался бы отправкой в паузе между кодами и в лимитах на номер, и
          * человек без единой SMS упирался бы в 429 (ревью 015). */
         await db().query('delete from otp_codes where id = $1', [codeId]).catch(() => undefined)
-        request.log.error({ err: error, phone: maskPhone(phone) }, 'не удалось отправить код')
+        request.log.error({ phone: maskPhone(phone) }, 'не удалось отправить код')
         throw new AppError(502, 'sms_failed', 'Не удалось отправить SMS. Попробуйте ещё раз через минуту.')
       }
 
