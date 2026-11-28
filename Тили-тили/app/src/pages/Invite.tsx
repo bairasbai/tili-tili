@@ -143,6 +143,9 @@ function useRsvpPage(token: string | null, online: boolean, generation: number) 
     loading: online && !!token && !refusal && current === null && page === null,
     /* Перечитывание за спиной у показанной страницы: кнопки ответа ждут его. */
     refreshing: !!token && current === null && page !== null,
+    // Событие фокуса может начать перечитывание до обновления props кнопки.
+    getSaveGeneration: () => token && current?.page && navigator.onLine && readSequence.current === tick
+      && guestDayIsCurrent(token, generation) && !guestDayRefusal(token) ? generation : null,
     readTick: result?.tick ?? 0, error, linkDead, reload,
   }
 }
@@ -266,7 +269,8 @@ function MainInvite() {
   )
 
   return <InviteView key={token} page={page} token={token} day={day} opened={opened} setOpened={setOpened} scrollY={scrollY} progress={progress}
-    rootRef={root} onAnswered={q.reload} readTick={q.readTick} online={online} refreshing={q.refreshing} showThanks={online && !q.refreshing && q.error === null} />
+    rootRef={root} onAnswered={q.reload} readTick={q.readTick} getSaveGeneration={q.getSaveGeneration}
+    online={online} refreshing={q.refreshing} showThanks={online && !q.refreshing && q.error === null} />
 }
 
 /** A selected event has its own read-only programme and never inherits the MAIN page's access gates. */
@@ -440,7 +444,7 @@ function RsvpNotesFields({ notes, change, disabled, T }: {
 /* Тело вынесено отдельно: данные нужны до первого хука блоков гостя, а хуки
    нельзя объявлять после условного возврата. */
 function InviteView({
-  page, token, day, opened, setOpened, scrollY, progress, rootRef, onAnswered, readTick, online, refreshing, showThanks,
+  page, token, day, opened, setOpened, scrollY, progress, rootRef, onAnswered, readTick, getSaveGeneration, online, refreshing, showThanks,
 }: {
   page: RsvpPage
   token: string
@@ -452,6 +456,7 @@ function InviteView({
   rootRef: React.RefObject<HTMLDivElement | null>
   onAnswered: () => number
   readTick: number
+  getSaveGeneration: () => number | null
   online: boolean
   /** Ответ ушёл, страница перечитывается: до свежей кнопки ответа заняты. */
   refreshing: boolean
@@ -666,6 +671,7 @@ function InviteView({
                 busy={busy}
                 T={T}
                 readTick={readTick}
+                getSaveGeneration={getSaveGeneration}
                 onSaved={onAnswered}
               />
             ) : !answered ? (
@@ -815,23 +821,28 @@ function InviteView({
 const guestChoiceFocus = 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-current'
 
 function FamilyRsvpForm({
-  token, members, busy, T, readTick, onSaved,
+  token, members, busy, T, readTick, getSaveGeneration, onSaved,
 }: {
   token: string
   members: RsvpMemberView[]
   busy: boolean
   T: Theme
   readTick: number
+  getSaveGeneration: () => number | null
   onSaved: () => number
 }) {
   const [edits, setEdits] = useState<Record<string, Partial<RsvpMemberView>>>({})
   const [sending, setSending] = useState(false)
+  const saving = useRef(false)
   const [saved, setSaved] = useState<{ refreshTick: number; submitted: RsvpMemberView[] } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const groupId = useId()
   // Keep the accepted answers visible until a read started after the write has completed.
   const current = saved && readTick < saved.refreshTick ? saved.submitted : members
   const draft = current.map((member) => ({ ...member, ...edits[member.guestId] }))
+  const hasPendingAnswer = draft.some((member) => member.status === 'pending')
+  const unavailable = busy || sending
+  const availableSaveGeneration = () => unavailable || hasPendingAnswer || saving.current ? null : getSaveGeneration()
 
   const patch = (guestId: string, change: Partial<RsvpMemberView>) => {
     setSaved(null)
@@ -839,7 +850,9 @@ function FamilyRsvpForm({
   }
 
   const save = () => void (async () => {
-    const generation = guestDayGeneration()
+    const generation = availableSaveGeneration()
+    if (generation === null) return
+    saving.current = true
     setSending(true)
     setSaved(null)
     setError(null)
@@ -862,6 +875,7 @@ function FamilyRsvpForm({
     } catch (e) {
       if (guestDayIsCurrent(token, generation)) setError(explainError(e))
     } finally {
+      saving.current = false
       setSending(false)
     }
   })()
@@ -927,9 +941,16 @@ function FamilyRsvpForm({
         </div>
       ))}
       <button
-        disabled={busy || sending || draft.some((member) => member.status === 'pending')}
+        type="button"
+        disabled={hasPendingAnswer}
+        aria-disabled={unavailable || undefined}
+        onKeyDown={(event) => {
+          if ((event.key === 'Enter' || event.key === ' ') && (event.repeat || availableSaveGeneration() === null)) {
+            event.preventDefault()
+          }
+        }}
         onClick={save}
-        className={`press w-full min-h-12 rounded-full text-[12.5px] font-semibold disabled:opacity-50 ${guestChoiceFocus}`}
+        className={`press w-full min-h-12 rounded-full text-[12.5px] font-semibold disabled:opacity-50 aria-disabled:opacity-50 ${guestChoiceFocus}`}
         style={{ background: T.accentGrad, color: '#FFF7F0' }}
       >
         {sending ? t('Отправляем…') : t('Сохранить ответы семьи')}
@@ -937,7 +958,7 @@ function FamilyRsvpForm({
       <p role="status" className={saved ? 'text-[11.5px] text-center' : 'sr-only'} style={{ color: T.ink }}>
         {sending ? t('Отправляем…') : saved ? t('Ответы семьи сохранены') : ''}
       </p>
-      {draft.some((member) => member.status === 'pending') && (
+      {hasPendingAnswer && (
         <p className="text-[10.5px] text-center" style={{ color: T.soft }}>{t('Выберите ответ для каждого человека')}</p>
       )}
       {error && <p role="alert" className="text-[11.5px] text-center" style={{ color: T.accent }}>{error}</p>}
