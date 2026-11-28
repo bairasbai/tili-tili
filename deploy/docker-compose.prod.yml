@@ -9,10 +9,11 @@
 #
 # Запуск из папки deploy/:
 #   docker compose -f docker-compose.prod.yml up -d --build
-# С локальной базой:
+# Для локальной базы задайте POSTGRES_PASSWORD в окружении Compose.
 #   docker compose -f docker-compose.prod.yml --profile localdb up -d --build
 #
-# Секреты — только в ../Тили-тили/backend/.env (в репозиторий не попадает).
+# Секреты api в ../Тили-тили/backend/.env. Пароль профиля localdb
+# задаётся отдельно через окружение Compose.
 # TLS снимает балансировщик Timeweb или certbot на хосте перед портом 80.
 
 services:
@@ -80,7 +81,9 @@ services:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-tili}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?задайте POSTGRES_PASSWORD}
+      # Compose интерполирует весь файл, включая выключенный профиль.
+      # При первой инициализации localdb пароль проверяет образ PostgreSQL.
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-}"
       POSTGRES_DB: ${POSTGRES_DB:-tili}
     volumes:
       - db-data:/var/lib/postgresql/data
