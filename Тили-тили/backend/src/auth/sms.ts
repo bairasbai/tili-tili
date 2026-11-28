@@ -30,6 +30,9 @@ class ConsoleSender implements SmsSender {
   }
 }
 
+const acceptedSmsStatuses = new Set([0, 1, 3, 4, 8])
+type SmsFailure = 'http_error' | 'provider_rejected' | 'invalid_response' | 'message_rejected' | 'timeout' | 'network_error'
+
 class SmsAeroSender implements SmsSender {
   readonly kind = 'smsaero'
   constructor(
@@ -39,25 +42,50 @@ class SmsAeroSender implements SmsSender {
     private readonly log: FastifyBaseLogger,
   ) {}
 
-  async send(phone: string, text: string): Promise<void> {
-    const url = new URL('https://gate.smsaero.ru/v2/sms/send')
-    url.searchParams.set('number', phone.replace('+', ''))
-    url.searchParams.set('text', text)
-    url.searchParams.set('sign', this.sign)
-    const auth = Buffer.from(`${this.email}:${this.key}`).toString('base64')
+  private fail(reason: SmsFailure, status?: number): never {
+    this.log.error({ reason, ...(status === undefined ? {} : { status }) }, 'smsaero отказал')
+    throw new Error(`smsaero: ${reason}`)
+  }
 
-    const res = await fetch(url, {
-      headers: { authorization: `Basic ${auth}` },
-      // Без таймаута зависший провайдер держит запрос пользователя минутами.
-      signal: AbortSignal.timeout(10_000),
-    })
-    const body = (await res.json().catch(() => null)) as { success?: boolean; message?: string } | null
-    if (!res.ok || body?.success === false) {
-      // Наружу эта ошибка не уходит: человеку всё равно, что у провайдера
-      // кончились деньги. Ему говорят «не удалось отправить, попробуйте позже».
-      this.log.error({ status: res.status, message: body?.message }, 'smsaero отказал')
-      throw new Error('smsaero: ' + (body?.message ?? res.status))
+  async send(phone: string, text: string): Promise<void> {
+    const number = phone.replace('+', '')
+    const auth = Buffer.from(`${this.email}:${this.key}`).toString('base64')
+    const signal = AbortSignal.timeout(10_000)
+    let res: Response
+    try {
+      res = await fetch('https://gate.smsaero.ru/v2/sms/send', {
+        method: 'POST',
+        redirect: 'manual',
+        headers: { authorization: `Basic ${auth}`, accept: 'application/json' },
+        body: new URLSearchParams({ number, text, sign: this.sign }),
+        signal,
+      })
+    } catch (error) {
+      return this.fail(signal.aborted || (error instanceof DOMException && error.name === 'TimeoutError') ? 'timeout' : 'network_error')
     }
+    if (!res.ok) {
+      await res.body?.cancel().catch(() => undefined)
+      this.fail('http_error', res.status)
+    }
+
+    const body = (await res.json().catch(() => null)) as { success?: unknown; data?: unknown } | null
+    if (signal.aborted) this.fail('timeout', res.status)
+    if (body?.success === false) this.fail('provider_rejected', res.status)
+    if (body?.success !== true || !Array.isArray(body.data) || body.data.length !== 1) {
+      this.fail('invalid_response', res.status)
+    }
+    const result = body.data[0] as { id?: unknown; status?: unknown; number?: unknown } | null
+    if (!result || typeof result.id !== 'number' || !Number.isSafeInteger(result.id) || result.id <= 0 || typeof result.status !== 'number') {
+      this.fail('invalid_response', res.status)
+    }
+    const recipient = result.number
+    if (recipient !== undefined && (
+      (typeof recipient !== 'string' && typeof recipient !== 'number') || String(recipient).replace(/^\+/, '') !== number
+    )) {
+      this.fail('invalid_response', res.status)
+    }
+    if (result.status === 2 || result.status === 6) this.fail('message_rejected', res.status)
+    if (!acceptedSmsStatuses.has(result.status)) this.fail('invalid_response', res.status)
   }
 }
 

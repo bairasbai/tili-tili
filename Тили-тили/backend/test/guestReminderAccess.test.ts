@@ -1,9 +1,11 @@
 import { randomInt, randomUUID } from 'node:crypto'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
+import { createSender } from '../src/auth/sms.js'
 import { ACCESS_TTL_SECONDS, signAccessToken } from '../src/auth/tokens.js'
 import type { Queryable } from '../src/plugins/db.js'
+import { REMIND_MAX_PER_CALL } from '../src/routes/guests.js'
 
 const DB = process.env.TEST_DATABASE_URL
 const SECRET = 'a'.repeat(48), POLICY = '2026-09-02'
@@ -161,6 +163,53 @@ describe.skipIf(!DB)('guest reminders: current claim access and committed bookke
     expect(results.map(res => res.statusCode).sort()).toEqual([200, 429])
     expect(calls).toBe(1)
     expect(await mark(w)).not.toBeNull()
+  })
+  it('counts an invalid gateway acknowledgement as failed and allows another reminder', async () => {
+    const w = await setup(), ordinary = app.sms.send
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+    const provider = createSender({
+      provider: 'smsaero', smsAeroEmail: 'sms@example.invalid', smsAeroKey: 'synthetic-key', smsAeroSign: 'Test',
+    }, 'test', app.log)
+    app.sms.send = (phone, text) => provider.send(phone, text)
+    try {
+      fetchMock.mockResolvedValueOnce(Response.json({ success: true, data: [] }))
+      const failed = await send(w)
+      expect(failed.statusCode, failed.body).toBe(200)
+      expect(failed.json()).toEqual({ sent: 0, failed: 1, skippedNoPhone: 0, skippedLinkUsed: 0 })
+      expect(await mark(w)).toBeNull()
+
+      fetchMock.mockResolvedValueOnce(Response.json({ success: true, data: [{ id: 1, status: 0 }] }))
+      const retried = await send(w)
+      expect(retried.statusCode, retried.body).toBe(200)
+      expect(retried.json()).toEqual({ sent: 1, failed: 0, skippedNoPhone: 0, skippedLinkUsed: 0 })
+      expect(await mark(w)).not.toBeNull()
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+    } finally {
+      app.sms.send = ordinary
+      fetchMock.mockRestore()
+    }
+  })
+  it('caps SMS attempts even when the provider rejects every recipient', async () => {
+    const w = await setup(), ordinary = app.sms.send
+    await app.db!.query(`with recipients as (
+      insert into guests (id,wedding_id,name,phone,rsvp_token)
+      select gen_random_uuid(),$1,'Reminder recipient ' || n,'+79000' || lpad(n::text,6,'0'),gen_random_uuid()::text
+        from generate_series(1,$2::int) as n
+      returning id,party_id
+    )
+    insert into guest_invite_codes (code,guest_id,party_id,expires_at)
+    select gen_random_uuid()::text,id,party_id,now()+interval '1 day' from recipients`, [w.weddingId, REMIND_MAX_PER_CALL])
+    const reject = vi.fn(async () => { throw new Error('synthetic gateway rejection') })
+    app.sms.send = reject
+    try {
+      const result = await send(w)
+      expect(result.statusCode, result.body).toBe(200)
+      expect(result.json()).toMatchObject({ sent: 0, failed: REMIND_MAX_PER_CALL + 1 })
+      expect(reject).toHaveBeenCalledTimes(REMIND_MAX_PER_CALL)
+      expect(await mark(w)).toBeNull()
+    } finally {
+      app.sms.send = ordinary
+    }
   })
   it('a delayed failed old dispatch cannot clear a newer successful claim', async () => {
     const w = await setup(), ordinary = app.sms.send
