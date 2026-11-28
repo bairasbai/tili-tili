@@ -1,3 +1,5 @@
+import { getI18nLang } from './i18n'
+
 /*
  * Деньги.
  *
@@ -27,8 +29,8 @@ const WITH_COINS = new Intl.NumberFormat('ru-RU', { minimumFractionDigits: 2, ma
 const EN_WHOLE = new Intl.NumberFormat('en-GB')
 const EN_WITH_COINS = new Intl.NumberFormat('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
-/** Показ пользователю. Копейки печатаются, только если они не нулевые. */
-export function fmt(k: Kopecks | bigint, lang: 'ru' | 'en' = 'ru'): string {
+/** Показ в выбранной локали. Копейки печатаются, только если они не нулевые. */
+export function fmt(k: Kopecks | bigint, lang: 'ru' | 'en' = getI18nLang()): string {
   const wholeFormat = lang === 'en' ? EN_WHOLE : WHOLE
   if (typeof k === 'bigint' || Number.isSafeInteger(k)) {
     const minor = BigInt(k)

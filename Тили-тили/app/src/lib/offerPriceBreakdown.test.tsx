@@ -1,11 +1,30 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { OfferPriceBreakdownView, OfferPriceEditor } from '@/components/OfferPriceBreakdown'
+import { getI18nLang, setI18nLang } from './i18n'
 import { fmt, parsePaymentRubles } from './money'
 import { normalizePriceComponentDraft, priceComponentDraft, type PriceBreakdown } from './offerPriceComponents'
 import { useState } from 'react'
 
 describe('составляющие цены предложения', () => {
+  it('форматирует итог предложения на языке интерфейса', () => {
+    const estimate: PriceBreakdown = {
+      quotedPrice: { amount: 100000, currency: 'RUB' },
+      knownTotal: { amount: 112505, currency: 'RUB' },
+      components: [{ kind: 'delivery', status: 'separate', amount: { amount: 12505, currency: 'RUB' } }],
+      unknownKinds: [],
+    }
+    const previous = getI18nLang()
+    setI18nLang('en')
+    try {
+      render(<OfferPriceBreakdownView breakdown={estimate} />)
+      expect(screen.getByText('Known estimate').nextElementSibling?.textContent).toBe('1,125.05 ₽')
+      expect(fmt(estimate.knownTotal.amount, 'ru').replace(/[\u00a0\u202f]/g, ' ')).toBe('1 125,05 ₽')
+    } finally {
+      setI18nLang(previous)
+    }
+  })
+
   it('различает точный ноль, неизвестную сумму и переполнение', () => {
     const result = normalizePriceComponentDraft(100000, {
       delivery: { status: 'separate', amount: '125,05' },
