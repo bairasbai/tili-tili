@@ -197,12 +197,49 @@ localStorage.setItem('tt_wedding_date', JSON.stringify({json.dumps(fixture['date
         guest_page.evaluate("window.dispatchEvent(new Event('focus'))")
     expect(first.get_by_role("textbox", name="Условия доступности", exact=True)).to_have_value("Вход без ступеней E2E")
     expect(second.get_by_role("textbox", name="Потребности ребёнка", exact=True)).to_have_value("Детский стульчик E2E")
-    guest_page.get_by_role("button", name="Сохранить ответы семьи", exact=True).click()
-    expect(guest_page.get_by_text("Что будете есть E2E?", exact=True)).to_be_visible(timeout=15_000)
-    guest_page.screenshot(path=str(OUT / "02-family-rsvp.png"), full_page=True)
-
     guest_token = guest_page.evaluate("localStorage.getItem('tt_guest_token')")
     assert guest_token and len(guest_token) > 10
+    rsvp_url = f"{BASE}/api/rsvp/{guest_token}"
+    saved_status = guest_page.locator("#main-rsvp").get_by_role("status").filter(
+        has_text=re.compile(r"^Ответы семьи сохранены$")
+    )
+    refreshing = guest_page.get_by_text("Обновляем приглашение…", exact=True)
+    held_reads = []
+    held_writes = []
+
+    def hold_family_requests(route):
+        (held_reads if route.request.method == "GET" else held_writes).append(route)
+
+    expect(saved_status).to_have_count(0)
+    guest_page.route(rsvp_url, hold_family_requests)
+    try:
+        with guest_page.expect_request(lambda r: r.url == rsvp_url and r.method == "POST"):
+            guest_page.get_by_role("button", name="Сохранить ответы семьи", exact=True).click()
+        # A focus refresh can return the old answers while the write is still pending.
+        with guest_page.expect_request(lambda r: r.url == rsvp_url and r.method == "GET"):
+            guest_page.evaluate("window.dispatchEvent(new Event('focus'))")
+        expect(refreshing).to_be_visible()
+        with guest_page.expect_response(lambda r: r.url == rsvp_url and r.request.method == "GET") as previous_read:
+            held_reads.pop(0).continue_()
+        checked(previous_read.value, 200, "read previous family RSVP")
+        expect(refreshing).to_have_count(0)
+        expect(saved_status).to_have_count(0)
+        with guest_page.expect_request(lambda r: r.url == rsvp_url and r.method == "GET"), \
+                guest_page.expect_response(lambda r: r.url == rsvp_url and r.request.method == "POST") as family_write:
+            held_writes.pop(0).continue_()
+        checked(family_write.value, 200, "save family RSVP")
+        expect(saved_status).to_be_visible(timeout=15_000)
+        expect(first.get_by_role("button", name="Приду", exact=True)).to_have_attribute("aria-pressed", "true")
+        expect(first.get_by_role("textbox", name="Условия доступности", exact=True)).to_have_value("Вход без ступеней E2E")
+        expect(second.get_by_role("textbox", name="Потребности ребёнка", exact=True)).to_have_value("Детский стульчик E2E")
+        assert held_reads, "Saved confirmation must precede the refreshed read"
+    finally:
+        for route in [*held_reads, *held_writes]:
+            route.continue_()
+        guest_page.unroute(rsvp_url, hold_family_requests)
+
+    expect(guest_page.get_by_text("Что будете есть E2E?", exact=True)).to_be_visible(timeout=15_000)
+    guest_page.screenshot(path=str(OUT / "02-family-rsvp.png"), full_page=True)
     guest_api = p.request.new_context(base_url=API)
     rsvp = checked(guest_api.get(f"/rsvp/{guest_token}"), 200, "family RSVP")
     by_name = {m["name"]: m for m in rsvp["members"]}
