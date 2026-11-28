@@ -203,18 +203,51 @@ localStorage.setItem('tt_wedding_date', JSON.stringify({json.dumps(fixture['date
     saved_status = guest_page.locator("#main-rsvp").get_by_role("status").filter(
         has_text=re.compile(r"^Ответы семьи сохранены$")
     )
+    save = guest_page.locator("#main-rsvp").get_by_role(
+        "button", name=re.compile(r"^(Сохранить ответы семьи|Отправляем…)$")
+    )
     refreshing = guest_page.get_by_text("Обновляем приглашение…", exact=True)
     held_reads = []
     held_writes = []
+    post_requests = []
 
     def hold_family_requests(route):
-        (held_reads if route.request.method == "GET" else held_writes).append(route)
+        if route.request.method == "GET":
+            held_reads.append(route)
+        else:
+            post_requests.append(route.request)
+            held_writes.append(route)
 
     expect(saved_status).to_have_count(0)
+    expect(save).to_be_enabled()
     guest_page.route(rsvp_url, hold_family_requests)
     try:
+        # A focus-triggered read can start before React refreshes the button's props.
+        with guest_page.expect_request(lambda r: r.url == rsvp_url and r.method == "GET"):
+            save.evaluate("(button) => { window.dispatchEvent(new Event('focus')); button.click(); }")
+        expect(refreshing).to_be_visible()
+        with guest_page.expect_response(lambda r: r.url == rsvp_url and r.request.method == "GET") as focus_read:
+            held_reads.pop(0).continue_()
+        checked(focus_read.value, 200, "refresh before saving family RSVP")
+        expect(save).to_be_enabled()
+        assert not post_requests, "Saving must wait for the focus-triggered access check"
         with guest_page.expect_request(lambda r: r.url == rsvp_url and r.method == "POST"):
-            guest_page.get_by_role("button", name="Сохранить ответы семьи", exact=True).click()
+            save.press("Enter")
+        expect(save).to_be_focused()
+        expect(save).to_be_disabled()
+        guest_page.keyboard.press("Enter")
+        with guest_page.expect_response(lambda r: r.url == rsvp_url and r.request.method == "POST") as unavailable:
+            held_writes.pop(0).fulfill(status=503, json={"error": {"code": "service_unavailable"}})
+        assert unavailable.value.status == 503
+        expect(guest_page.locator("#main-rsvp").get_by_role("alert")).to_have_text("Сервер недоступен. Попробуйте позже")
+        expect(first.get_by_role("textbox", name="Условия доступности", exact=True)).to_have_value("Вход без ступеней E2E")
+        expect(save).to_be_enabled()
+        expect(save).to_be_focused()
+        assert len(post_requests) == 1, "Repeated Enter while saving sent an extra request"
+        with guest_page.expect_request(lambda r: r.url == rsvp_url and r.method == "POST"):
+            guest_page.keyboard.down("Enter")
+        expect(save).to_be_focused()
+        expect(save).to_be_disabled()
         # A focus refresh can return the old answers while the write is still pending.
         with guest_page.expect_request(lambda r: r.url == rsvp_url and r.method == "GET"):
             guest_page.evaluate("window.dispatchEvent(new Event('focus'))")
@@ -229,13 +262,29 @@ localStorage.setItem('tt_wedding_date', JSON.stringify({json.dumps(fixture['date
             held_writes.pop(0).continue_()
         checked(family_write.value, 200, "save family RSVP")
         expect(saved_status).to_be_visible(timeout=15_000)
+        expect(save).to_be_focused()
+        expect(save).to_be_disabled()
         expect(first.get_by_role("button", name="Приду", exact=True)).to_have_attribute("aria-pressed", "true")
         expect(first.get_by_role("textbox", name="Условия доступности", exact=True)).to_have_value("Вход без ступеней E2E")
         expect(second.get_by_role("textbox", name="Потребности ребёнка", exact=True)).to_have_value("Детский стульчик E2E")
         assert held_reads, "Saved confirmation must precede the refreshed read"
+        guest_page.keyboard.down("Enter")
+        guest_page.keyboard.down("Space")
+        with guest_page.expect_response(lambda r: r.url == rsvp_url and r.request.method == "GET") as after_write:
+            held_reads.pop(0).continue_()
+        checked(after_write.value, 200, "read saved family RSVP")
+        expect(save).to_be_enabled()
+        expect(save).to_be_focused()
+        guest_page.keyboard.down("Enter")
+        guest_page.keyboard.up("Enter")
+        guest_page.keyboard.up("Space")
+        expect(save).to_be_enabled()
+        assert len(post_requests) == 2, "A held or repeated key sent an extra request"
     finally:
-        for route in [*held_reads, *held_writes]:
+        for route in held_reads:
             route.continue_()
+        for route in held_writes:
+            route.abort()
         guest_page.unroute(rsvp_url, hold_family_requests)
 
     expect(guest_page.get_by_text("Что будете есть E2E?", exact=True)).to_be_visible(timeout=15_000)
