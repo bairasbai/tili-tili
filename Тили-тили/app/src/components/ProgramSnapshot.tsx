@@ -30,26 +30,30 @@ export function ProgramSnapshot({ program, etag, reload, acknowledge, onRefused,
   const [receipt, setReceipt] = useState<VendorProgramAck | null>(null)
   const inFlight = useRef(false)
   const alive = useRef(true)
+  const confirmButton = useRef<HTMLButtonElement>(null)
   const reloadButton = useRef<HTMLButtonElement>(null)
   const restoreReloadFocus = useRef(false)
   useEffect(() => { alive.current = true; return () => { alive.current = false } }, [])
   useLayoutEffect(() => {
-    if (!invalid || busy || !restoreReloadFocus.current) return
+    if ((!invalid && !receipt) || busy || !restoreReloadFocus.current) return
     restoreReloadFocus.current = false
     if (document.activeElement === document.body) reloadButton.current?.focus()
-  }, [invalid, busy])
+  }, [invalid, receipt, busy])
   useEffect(() => {
     if (offlineSavedAt || !program.expiresAt || program.acknowledgedAt || receipt) return
-    const timer = window.setTimeout(() => { setInvalid(true); setError(t('Срок просмотра истёк — откройте программу заново')) }, Math.max(0, Date.parse(program.expiresAt) - Date.now()))
+    const timer = window.setTimeout(() => {
+      if (confirmButton.current && confirmButton.current === document.activeElement) restoreReloadFocus.current = true
+      setInvalid(true); setError(t('Срок просмотра истёк — откройте программу заново'))
+    }, Math.max(0, Date.parse(program.expiresAt) - Date.now()))
     return () => window.clearTimeout(timer)
   }, [offlineSavedAt, program.expiresAt, program.acknowledgedAt, receipt])
   const ack = async (button: HTMLButtonElement) => {
     if (offlineSavedAt || !checked || inFlight.current || invalid || !program.readToken || etag !== `"${program.sourceVersion}"`) return
-    const hadFocus = document.activeElement === button
     inFlight.current = true; setBusy(true); setError(null)
     try {
       const result = await acknowledge(program.readToken, etag)
       if (!alive.current) return
+      if (document.activeElement === button) restoreReloadFocus.current = true
       if (result.sourceVersion !== program.sourceVersion) { setInvalid(true); setError(t('Версия ответа не совпадает — откройте программу заново')); return }
       setReceipt(result)
     } catch (e) {
@@ -57,7 +61,7 @@ export function ProgramSnapshot({ program, etag, reload, acknowledge, onRefused,
       const refused = e instanceof ApiError && e.kind === 'http' && e.status >= 400 && e.status < 500
       const stale = refused && e.status === 409
       if (refused) {
-        restoreReloadFocus.current = stale && hadFocus
+        if (stale && document.activeElement === button) restoreReloadFocus.current = true
         setInvalid(true)
       }
       if (e instanceof ApiError && [401, 403, 404, 410].includes(e.status)) onRefused?.(e)
@@ -94,7 +98,8 @@ export function ProgramSnapshot({ program, etag, reload, acknowledge, onRefused,
       {acknowledgedAt ? <p role="status" className="text-sm flex items-start gap-2 mt-4"><Check size={18} className="shrink-0" /><span>{t(offlineSavedAt ? 'Подтверждено в сохранённом снимке' : 'Версия подтверждена')} · {acknowledgedAt}</span></p> : !offlineSavedAt && program.requiresAcknowledgment && <div className="border-t border-[var(--line)] pt-4 mt-3">
         {proofMissing && <p role="alert" className="text-sm">{t('Данные просмотра неполные — откройте программу заново')}</p>}
         <label className="flex items-start gap-3 text-sm"><input type="checkbox" checked={checked} disabled={busy || proofMissing} onChange={e => setChecked(e.target.checked)} className="h-5 w-5 shrink-0 mt-0.5" /><span>{t('Я ознакомился с этой версией программы')}</span></label>
-        <button onClick={e => void ack(e.currentTarget)} disabled={!checked || busy || proofMissing} className="press w-full min-h-11 border border-[var(--line)] rounded-lg text-sm font-semibold px-3 py-2 mt-3 disabled:opacity-40">{busy ? t('Секунду…') : error ? t('Повторить подтверждение') : t('Подтвердить ознакомление')}</button>
+        <button ref={confirmButton} onClick={e => void ack(e.currentTarget)} disabled={!checked || proofMissing} aria-disabled={busy || undefined}
+          className="press w-full min-h-11 border border-[var(--line)] rounded-lg text-sm font-semibold px-3 py-2 mt-3 disabled:opacity-40 aria-disabled:opacity-40">{busy ? t('Секунду…') : error ? t('Повторить подтверждение') : t('Подтвердить ознакомление')}</button>
       </div>}
     </>}
     <button ref={reloadButton} onClick={reload} disabled={busy || reloadDisabled} className="press flex items-center gap-2 min-h-11 mt-3 text-sm disabled:opacity-40"><RefreshCw size={16} />{t('Открыть заново')}</button>
