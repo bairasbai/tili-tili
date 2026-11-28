@@ -60,7 +60,7 @@ export interface TillyModel {
   complete(request: TillyRequest): Promise<TillyReply>
 }
 
-/** Отказ провайдера: статус и его слова — в лог, паре уходит честное «временно без ИИ». */
+/** Статус и сообщение отказа, полученные от провайдера. */
 export class TillyProviderError extends Error {
   constructor(
     readonly status: number,
@@ -69,6 +69,14 @@ export class TillyProviderError extends Error {
     super(message)
     this.name = 'TillyProviderError'
   }
+}
+
+/** Текст и стек ошибки могут содержать данные запроса. В журнал идут поля диагностики. */
+export function tillyFailureLogFields(error: unknown) {
+  if (error instanceof TillyProviderError) return { failureReason: 'upstream', providerStatus: error.status }
+  if (error instanceof Error && error.name === 'TimeoutError') return { failureReason: 'timeout' }
+  if (error instanceof Error && error.name === 'AbortError') return { failureReason: 'aborted' }
+  return { failureReason: 'unexpected' }
 }
 
 export const DEFAULT_BASE_URL: Record<TillyProvider, string | null> = {
@@ -163,7 +171,10 @@ export class OpenAiCompatibleModel implements TillyModel {
           !request.signal?.aborted &&
           (error instanceof TillyProviderError ? RETRYABLE(error.status) : !(error instanceof Error && error.name === 'AbortError'))
         if (!retryable) throw error
-        this.options.log?.warn({ err: error, provider: this.provider, model: this.model }, 'Тиль: провайдер не ответил, повтор')
+        this.options.log?.warn(
+          { provider: this.provider, model: this.model, ...tillyFailureLogFields(error) },
+          'Тиль: провайдер не ответил, повтор',
+        )
         await delay(this.retryDelayMs)
       }
     }

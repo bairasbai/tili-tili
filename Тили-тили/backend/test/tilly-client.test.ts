@@ -9,10 +9,11 @@
  * 429/5xx, отказ на пустой ответ и на `error` в теле 200, таймаут.
  * Базы не нужно — набор идёт и без TEST_DATABASE_URL.
  */
-import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
 import http from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { OpenAiCompatibleModel, TillyProviderError, createTillyModel, DEFAULT_MODEL } from '../src/tilly/model.js'
+import type { FastifyBaseLogger } from 'fastify'
+import { OpenAiCompatibleModel, TillyProviderError, createTillyModel, DEFAULT_MODEL, tillyFailureLogFields } from '../src/tilly/model.js'
 
 interface Seen {
   url: string
@@ -113,11 +114,18 @@ describe('фича 010: клиент OpenAI-совместимого прото�
 
   it('429 от провайдера — один повтор; второй 429 — TillyProviderError со статусом, третьего запроса нет', async () => {
     seen.length = 0
-    queue.push({ status: 429, body: { error: { message: 'Rate limit exceeded: free-models-per-min' } } })
-    const model = new OpenAiCompatibleModel({ provider: 'openrouter', baseUrl, apiKey: 'k', models: ['openrouter/free'], timeoutMs: 5_000, retryDelayMs: 0 })
+    queue.push({ status: 429, body: { error: { message: 'Синтетический текст повтора' } } })
+    const warn = vi.fn()
+    const log = { warn } as unknown as FastifyBaseLogger
+    const model = new OpenAiCompatibleModel({ provider: 'openrouter', baseUrl, apiKey: 'k', models: ['openrouter/free'], timeoutMs: 5_000, retryDelayMs: 0, log })
     const reply = await model.complete(request())
     expect(reply.text).toBe('Не забронированы: DJ и транспорт.')
     expect(seen, 'после 429 должен быть ровно один повтор').toHaveLength(2)
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(warn).toHaveBeenCalledWith(
+      { provider: 'openrouter', model: 'openrouter/free', failureReason: 'upstream', providerStatus: 429 },
+      'Тиль: провайдер не ответил, повтор',
+    )
 
     seen.length = 0
     queue.push({ status: 429, body: { error: { message: 'limit' } } }, { status: 429, body: { error: { message: 'limit again' } } })
@@ -149,6 +157,13 @@ describe('фича 010: клиент OpenAI-совместимого прото�
     const started = Date.now()
     await expect(model.complete(request())).rejects.toBeTruthy()
     expect(Date.now() - started, 'две попытки по 150 мс, не 1400').toBeLessThan(1_200)
+  })
+
+  it('диагностика известной и неизвестной ошибки содержит только фиксированные поля', () => {
+    const unknown = new Error('Синтетический текст ошибки', { cause: new Error('Синтетическая причина') })
+    expect(tillyFailureLogFields(unknown)).toEqual({ failureReason: 'unexpected' })
+    expect(tillyFailureLogFields(new DOMException('Текст тайм-аута', 'TimeoutError'))).toEqual({ failureReason: 'timeout' })
+    expect(tillyFailureLogFields(new DOMException('Текст отмены', 'AbortError'))).toEqual({ failureReason: 'aborted' })
   })
 
   it('createTillyModel: без провайдера — null; OpenRouter без модели — openrouter/free; Ollama — hermes3; openai без адреса — ошибка', () => {

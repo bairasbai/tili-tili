@@ -12,12 +12,12 @@
  * реплики, `Chat.tilly.usedToday` совпадает; `AdminMetrics.llm` — по учёту.
  * Красный без фикса: на HEAD `chats.ts` отвечал заглушкой и не знал квоты.
  */
-import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
 import { randomInt } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { hashCode } from '../src/auth/otp.js'
-import type { TillyModel, TillyRequest, TillyReply } from '../src/tilly/model.js'
+import { TillyProviderError, type TillyModel, type TillyRequest, type TillyReply } from '../src/tilly/model.js'
 import { TILLY_OFFLINE, TILLY_STUB } from '../src/tilly/service.js'
 
 const DB = process.env.TEST_DATABASE_URL
@@ -36,7 +36,7 @@ class ScriptedModel implements TillyModel {
     this.requests.push(request)
     if (this.failNext) {
       this.failNext = false
-      throw new Error('provider down (тест)')
+      throw new TillyProviderError(503, 'Синтетический текст отказа провайдера')
     }
     return { text: this.reply, usage: { inputTokens: 1200, outputTokens: 80 }, finish: 'stop', model: 'scripted-1' }
   }
@@ -184,9 +184,19 @@ describe.skipIf(!live)('фича 010: Тиль на живой модели', ()
     expect((await ask(app, w, 'Сколько игристого на 80 гостей?')).statusCode).toBe(201)
     await app.tilly.settle()
 
-    model.failNext = true
-    expect((await ask(app, w, 'А вина?')).statusCode, 'отказ модели не должен ронять ответ паре').toBe(201)
-    await app.tilly.settle()
+    const errors = vi.spyOn(app.log, 'error')
+    try {
+      model.failNext = true
+      expect((await ask(app, w, 'А вина?')).statusCode, 'отказ модели не должен ронять ответ паре').toBe(201)
+      await app.tilly.settle()
+      expect(errors).toHaveBeenCalledTimes(1)
+      expect(errors).toHaveBeenCalledWith(
+        { opsIntegration: 'tilly', provider: 'test', model: 'scripted-1', failureReason: 'upstream', providerStatus: 503 },
+        'Тиль: модель не ответила',
+      )
+    } finally {
+      errors.mockRestore()
+    }
     const list = await messagesOf(app, w)
     expect(list.map((m) => m.text)).toEqual(['Сколько игристого на 80 гостей?', model.reply, 'А вина?', TILLY_OFFLINE])
     expect(model.requests[1]!.messages).toEqual([
