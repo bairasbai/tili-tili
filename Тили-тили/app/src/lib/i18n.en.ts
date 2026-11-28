@@ -2827,6 +2827,7 @@ Object.assign(EN, {
   'имя можно уточнить у пары': 'you can confirm the name with the couple',
   'Приду': 'Attending',
   'Сохранить ответы семьи': 'Save family responses',
+  'Ответы семьи сохранены': 'Family responses saved',
   'Выберите ответ для каждого человека': 'Choose a response for each person',
 })
 

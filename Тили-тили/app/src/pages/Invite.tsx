@@ -22,7 +22,7 @@ import { fmt } from '@/lib/money'
 import { cn, goBack, plural } from '@/lib/utils'
 import { getI18nLang, t } from '@/lib/i18n'
 import { useLiveAccess, useProgramOnline } from '@/lib/offlineProgramHooks'
-import { clearGuestDayRefusal, clearGuestEventRefusal, guestDayGeneration, guestDayRefusal, guestDayRevision, guestEventIsCurrent, guestEventReadTicket, guestEventRefusal, guestEventScopeRevision, recallGuestDay, recallGuestEvent, selectGuestEvent, subscribeGuestDayChanges, type GuestDayCopy, type GuestEventSelector } from '@/lib/guestDayOffline'
+import { clearGuestDayRefusal, clearGuestEventRefusal, guestDayGeneration, guestDayIsCurrent, guestDayRefusal, guestDayRevision, guestEventIsCurrent, guestEventReadTicket, guestEventRefusal, guestEventScopeRevision, recallGuestDay, recallGuestEvent, selectGuestEvent, subscribeGuestDayChanges, type GuestDayCopy, type GuestEventSelector } from '@/lib/guestDayOffline'
 
 /*
  * Гостевое приглашение.
@@ -82,6 +82,12 @@ type RsvpResult = { token: string; generation: number; tick: number; page: RsvpP
 function useRsvpPage(token: string | null, online: boolean, generation: number) {
   const [result, setResult] = useState<RsvpResult | null>(null)
   const [tick, setTick] = useState(0)
+  const readSequence = useRef(0)
+  const requestRead = useCallback(() => {
+    const next = ++readSequence.current
+    setTick(next)
+    return next
+  }, [])
   const refusal = guestDayRefusal(token)
   /* Запрос меняется с токеном и с каждым перечитыванием: пока ответа на этот
      запрос нет — ждём. Состояние выводится, а не выставляется в эффекте — так
@@ -97,7 +103,10 @@ function useRsvpPage(token: string | null, online: boolean, generation: number) 
     return () => { alive = false }
   }, [token, tick, online, generation, refusal])
 
-  const reload = useCallback(() => { if (token) clearGuestDayRefusal(token); setTick(n => n + 1) }, [token])
+  const reload = useCallback(() => {
+    if (token) clearGuestDayRefusal(token)
+    return requestRead()
+  }, [token, requestRead])
   const current = result?.token === token && result.generation === generation && result.tick === tick ? result : null
   /*
    * Перечитывание того же токена держит прежнюю страницу до ответа, как
@@ -113,14 +122,13 @@ function useRsvpPage(token: string | null, online: boolean, generation: number) 
   const error: unknown = refusal ?? current?.error ?? null
   const linkDead = error instanceof ApiError && LINK_DEAD_STATUSES.includes(error.status)
   useEffect(() => {
-    const invalidate = () => setTick(n => n + 1)
-    window.addEventListener('offline', invalidate)
-    return () => window.removeEventListener('offline', invalidate)
-  }, [])
+    window.addEventListener('offline', requestRead)
+    return () => window.removeEventListener('offline', requestRead)
+  }, [requestRead])
   useEffect(() => {
     if (!token || !online || refusal || linkDead || !current) return
     const refresh = () => {
-      if (document.visibilityState === 'visible') setTick(n => n + 1)
+      if (document.visibilityState === 'visible') requestRead()
     }
     window.addEventListener('focus', refresh)
     document.addEventListener('visibilitychange', refresh)
@@ -128,14 +136,14 @@ function useRsvpPage(token: string | null, online: boolean, generation: number) 
       window.removeEventListener('focus', refresh)
       document.removeEventListener('visibilitychange', refresh)
     }
-  }, [token, online, refusal, linkDead, current])
+  }, [token, online, refusal, linkDead, current, requestRead])
   return {
     page,
     /* Первая загрузка: показывать нечего и ответа ещё нет. */
     loading: online && !!token && !refusal && current === null && page === null,
     /* Перечитывание за спиной у показанной страницы: кнопки ответа ждут его. */
     refreshing: !!token && current === null && page !== null,
-    error, linkDead, reload,
+    readTick: result?.tick ?? 0, error, linkDead, reload,
   }
 }
 
@@ -258,7 +266,7 @@ function MainInvite() {
   )
 
   return <InviteView key={token} page={page} token={token} day={day} opened={opened} setOpened={setOpened} scrollY={scrollY} progress={progress}
-    rootRef={root} onAnswered={q.reload} online={online} refreshing={q.refreshing} showThanks={online && !q.refreshing && q.error === null} />
+    rootRef={root} onAnswered={q.reload} readTick={q.readTick} online={online} refreshing={q.refreshing} showThanks={online && !q.refreshing && q.error === null} />
 }
 
 /** A selected event has its own read-only programme and never inherits the MAIN page's access gates. */
@@ -432,7 +440,7 @@ function RsvpNotesFields({ notes, change, disabled, T }: {
 /* Тело вынесено отдельно: данные нужны до первого хука блоков гостя, а хуки
    нельзя объявлять после условного возврата. */
 function InviteView({
-  page, token, day, opened, setOpened, scrollY, progress, rootRef, onAnswered, online, refreshing, showThanks,
+  page, token, day, opened, setOpened, scrollY, progress, rootRef, onAnswered, readTick, online, refreshing, showThanks,
 }: {
   page: RsvpPage
   token: string
@@ -442,7 +450,8 @@ function InviteView({
   scrollY: number
   progress: number
   rootRef: React.RefObject<HTMLDivElement | null>
-  onAnswered: () => void
+  onAnswered: () => number
+  readTick: number
   online: boolean
   /** Ответ ушёл, страница перечитывается: до свежей кнопки ответа заняты. */
   refreshing: boolean
@@ -656,6 +665,7 @@ function InviteView({
                 members={familyMembers}
                 busy={busy}
                 T={T}
+                readTick={readTick}
                 onSaved={onAnswered}
               />
             ) : !answered ? (
@@ -805,25 +815,33 @@ function InviteView({
 const guestChoiceFocus = 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-current'
 
 function FamilyRsvpForm({
-  token, members, busy, T, onSaved,
+  token, members, busy, T, readTick, onSaved,
 }: {
   token: string
   members: RsvpMemberView[]
   busy: boolean
   T: Theme
-  onSaved: () => void
+  readTick: number
+  onSaved: () => number
 }) {
   const [edits, setEdits] = useState<Record<string, Partial<RsvpMemberView>>>({})
-  const draft = members.map((member) => ({ ...member, ...edits[member.guestId] }))
   const [sending, setSending] = useState(false)
+  const [saved, setSaved] = useState<{ refreshTick: number; submitted: RsvpMemberView[] } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const groupId = useId()
+  // Keep the accepted answers visible until a read started after the write has completed.
+  const current = saved && readTick < saved.refreshTick ? saved.submitted : members
+  const draft = current.map((member) => ({ ...member, ...edits[member.guestId] }))
 
-  const patch = (guestId: string, change: Partial<RsvpMemberView>) =>
+  const patch = (guestId: string, change: Partial<RsvpMemberView>) => {
+    setSaved(null)
     setEdits((current) => ({ ...current, [guestId]: { ...current[guestId], ...change } }))
+  }
 
   const save = () => void (async () => {
+    const generation = guestDayGeneration()
     setSending(true)
+    setSaved(null)
     setError(null)
     try {
       await sendFamilyRsvp(token, draft.map((member) => ({
@@ -837,10 +855,12 @@ function FamilyRsvpForm({
             }
           : {}),
       })))
+      if (!guestDayIsCurrent(token, generation)) return
+      const refreshTick = onSaved()
       setEdits({})
-      onSaved()
+      setSaved({ refreshTick, submitted: draft })
     } catch (e) {
-      setError(explainError(e))
+      if (guestDayIsCurrent(token, generation)) setError(explainError(e))
     } finally {
       setSending(false)
     }
@@ -914,7 +934,9 @@ function FamilyRsvpForm({
       >
         {sending ? t('Отправляем…') : t('Сохранить ответы семьи')}
       </button>
-      <span role="status" className="sr-only">{sending ? t('Отправляем…') : ''}</span>
+      <p role="status" className={saved ? 'text-[11.5px] text-center' : 'sr-only'} style={{ color: T.ink }}>
+        {sending ? t('Отправляем…') : saved ? t('Ответы семьи сохранены') : ''}
+      </p>
       {draft.some((member) => member.status === 'pending') && (
         <p className="text-[10.5px] text-center" style={{ color: T.soft }}>{t('Выберите ответ для каждого человека')}</p>
       )}
