@@ -87,17 +87,21 @@ describe('external link actual API client and program UI', () => {
     try {
       let complete!: (reply: Reply) => void
       const pending = new Promise<Reply>(resolve => { complete = resolve })
-      const expiresAt = new Date(Date.now() + 1_000).toISOString()
-      serve(c => c.path === ACK ? pending : { body: { ...program(), expiresAt }, etag: '"17"' })
-      await act(async () => { view() })
-      fireEvent.click(screen.getByRole('checkbox'))
+      const expiresAt = new Date(Date.now() + 10_000).toISOString()
+      const read = { body: { ...program(), expiresAt }, etag: '"17"' }
+      serve(c => c.path === ACK ? pending : new Promise<Reply>(resolve => {
+        window.setTimeout(() => resolve(read), 30)
+      }))
+      view()
+      const checkbox = await vi.waitFor(() => screen.getByRole('checkbox'), { timeout: 3_000 })
+      fireEvent.click(checkbox)
       const confirm = button('Подтвердить ознакомление')
       confirm.focus()
       fireEvent.click(confirm)
       const chat = screen.getByPlaceholderText('Сообщение…')
       if (movedFocus) chat.focus()
 
-      await act(async () => { await vi.advanceTimersByTimeAsync(1_001) })
+      await act(async () => { await vi.advanceTimersByTimeAsync(Date.parse(expiresAt) - Date.now() + 1) })
       expect(screen.queryByRole('checkbox')).toBeNull()
       expect(button('Открыть заново').disabled).toBe(true)
 
