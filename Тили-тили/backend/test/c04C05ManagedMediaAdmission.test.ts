@@ -164,17 +164,25 @@ describe('independently pinned managed-media admissions', () => {
   })
   it('preserves the reviewed physical SQL of schemas 104 through 109', () => {
     expect(guestAddress.slice(0, 103)).toEqual(scenarios)
-    expect(verifyMigrationDirectory(fixture(guestAddress), guestAddress)).toEqual(guestAddressNames)
-    expect(coordination.slice(0, 104)).toEqual(guestAddress)
-    expect(verifyMigrationDirectory(fixture(coordination), coordination)).toEqual(coordinationNames)
-    expect(urgent.slice(0, 105)).toEqual(coordination)
-    expect(verifyMigrationDirectory(fixture(urgent), urgent)).toEqual(urgentNames)
-    expect(delivery.slice(0, 106)).toEqual(urgent)
-    expect(verifyMigrationDirectory(fixture(delivery), delivery)).toEqual(deliveryNames)
-    expect(deliveryFiles.slice(0, 107)).toEqual(delivery)
-    expect(verifyMigrationDirectory(fixture(deliveryFiles), deliveryFiles)).toEqual(deliveryFileNames)
-    expect(thanks.slice(0, 108)).toEqual(deliveryFiles)
-    expect(verifyMigrationDirectory(fixture(thanks), thanks)).toEqual(thanksNames)
+    const target = fixture(guestAddress)
+    expect(verifyMigrationDirectory(target, guestAddress)).toEqual(guestAddressNames)
+
+    // Each later schema is an exact extension. Add its new file before
+    // validating the directory, including all previously reviewed bytes.
+    let previous = guestAddress
+    for (const [pins, expectedNames] of [
+      [coordination, coordinationNames],
+      [urgent, urgentNames],
+      [delivery, deliveryNames],
+      [deliveryFiles, deliveryFileNames],
+      [thanks, thanksNames],
+    ] as const) {
+      expect(pins.slice(0, -1)).toEqual(previous)
+      const migration = pins.at(-1)!.name + '.cjs'
+      copyFileSync(join(directory, migration), join(target, migration))
+      expect(verifyMigrationDirectory(target, pins)).toEqual(expectedNames)
+      previous = pins
+    }
   })
   it('admits current124 physical SQL and complete SOURCE', () => {
     expect(support.slice(0, 109)).toEqual(thanks)
