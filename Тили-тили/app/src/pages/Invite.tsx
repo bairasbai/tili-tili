@@ -469,6 +469,13 @@ function InviteView({
     ? familyMembers.some((member) => member.status === 'yes')
     : page.status === 'yes'
   const [shuttleRevision, setShuttleRevision] = useState(0)
+  const invitationHeading = useRef<HTMLHeadingElement>(null)
+  const focusAfterOpening = useRef(false)
+  useLayoutEffect(() => {
+    if (!opened || !focusAfterOpening.current) return
+    focusAfterOpening.current = false
+    invitationHeading.current?.focus()
+  }, [opened])
   const w = page.wedding ?? {}
   const T = inviteThemes[w.inviteThemeId ?? 0] ?? inviteThemes[0]!
   const disp = T.serif ? 'font-serif-d' : ''
@@ -562,7 +569,10 @@ function InviteView({
               ♥
             </div>
             <h1 className={cn('text-[36px] mt-7 leading-tight', disp)}>{w.title}</h1>
-            <button onClick={() => setOpened(true)} className="press mt-10 px-9 h-[52px] rounded-full text-[13px] font-semibold tracking-wide"
+            <button onClick={() => {
+              focusAfterOpening.current = true
+              setOpened(true)
+            }} className="press mt-10 px-9 h-[52px] rounded-full text-[13px] font-semibold tracking-wide"
               style={{ background: T.overlayInk, color: T.ink === T.overlayInk ? T.accent : T.ink }}>
               {t('Открыть приглашение')}
             </button>
@@ -572,7 +582,7 @@ function InviteView({
       </div>
 
       {/* ── История ── */}
-      <div className={cn('max-w-[430px] mx-auto transition-opacity duration-700 pb-20 relative', opened ? 'opacity-100' : 'opacity-0')}>
+      <div id="invite-story" inert={!opened} className={cn('max-w-[430px] mx-auto transition-opacity duration-700 pb-20 relative', opened ? 'opacity-100' : 'opacity-0')}>
         <div className="pointer-events-none fixed inset-0 max-w-[430px] mx-auto z-0">
           {T.deco.map((d, k) => (
             <span key={k} className={cn('absolute text-[26px] opacity-30', k % 2 ? 'floaty' : 'floaty-slow')}
@@ -588,7 +598,7 @@ function InviteView({
           <div className="rv rv-scale">
             {page.guestName && <p className="italic text-[15px] font-serif-d" style={{ color: T.soft }}>{page.guestName}!</p>}
             <p className="text-[10px] tracking-[.3em] uppercase font-semibold mt-9" style={{ color: T.accent }}>{t('Мы женимся')}</p>
-            <h1 className={cn('text-[46px] leading-[1.05] mt-4', disp)}>{w.title}</h1>
+            <h1 ref={invitationHeading} tabIndex={-1} className={cn('text-[46px] leading-[1.05] mt-4', disp)}>{w.title}</h1>
             {(w.date || place) && (
               <div className="flex items-center justify-center gap-3 mt-6">
                 <span className="w-10 h-[1px]" style={{ background: T.soft }} />
